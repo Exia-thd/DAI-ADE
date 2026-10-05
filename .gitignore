@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.dai-ade/
+*.log
+.DS_Store

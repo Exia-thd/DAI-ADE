@@ -1,0 +1,17 @@
+{
+  "name": "dai-ade",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Agent Development Environment for the DAI Harness \u2014 the glass box around your own agents.",
+  "license": "MIT",
+  "author": "Dat Tran Huu",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "test": "node --test \"tests/*.test.js\"",
+    "tail": "node packages/shell/src/cli.js tail",
+    "doctor": "node packages/shell/src/cli.js doctor"
+  }
+}
