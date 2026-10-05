@@ -14,6 +14,48 @@ see [Milestones](#milestones).
 
 ---
 
+## Install
+
+One file. It fetches the ADE, the harness and the memory layer, wires them into
+a project of your choosing, and leaves a launcher behind.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1 -Project C:\code\my-repo
+```
+
+Installs into `%LOCALAPPDATA%\dai-ade`. No administrator rights, nothing written
+outside your profile, and re-running it updates in place.
+
+| Flag | Effect |
+|---|---|
+| `-Project <dir>` | the project to watch and wire hooks into (default: current folder) |
+| `-Root <dir>` | where the three repositories live |
+| `-SkipModel` | install the memory layer but not its embedding model (much faster; the layer refuses to run until you finish `node bin/setup.mjs`) |
+| `-SkipMemory` | leave the memory layer out entirely |
+| `-NoLaunch` | do not start the window at the end |
+
+Needs: **git**, **Node 20.11+**, and **Python** for the harness gates. Git for
+Windows also provides the bash the harness setup needs — the installer finds it
+through git rather than PATH, because Git for Windows does not put bash there
+and a PATH check silently skips the whole harness step.
+
+**It does not touch `~/.claude/settings.json`.** On a machine running Orca those
+hooks are Orca's. Claude Code merges user-level and project-level hooks, so the
+emitter is installed at project level and composes beside whatever is already
+there.
+
+Afterwards:
+
+```
+ade          # the window
+ade tail     # follow events in a shell
+ade doctor   # what is wired up, and what is not
+```
+
+Restart Claude Code in the watched project so the hooks take effect.
+
+---
+
 ## What works today
 
 ```bash
@@ -106,16 +148,29 @@ Three properties worth keeping:
 |---|---|---|
 | **M0** | Event schema, hook emitter, tailer, run index, CLI | **done** — 11 tests |
 | **M1** | Electron window: Flow timeline, Roster, Inspector (read-only) | next |
-| **M2** | Harness-side events: `TOOL_BLOCKED` from `policy_check.py`, `WORKER_*` from `worktree_manager.py`, `EVIDENCE_WRITTEN` from `run_check.py` | |
+| **M2** | Harness bridge: `TOOL_BLOCKED`, `EVIDENCE_WRITTEN`, `VERIFY_*`, `PHASE_*`, `GATE_*` read out of what the harness already writes | **done** |
 | **M3** | Control plane: gate approve/reject over MCP, webhook listener | |
 | **M4** | Worktrees + diff review with batched line comments | |
 | **M5** | Terminal (node-pty + xterm.js) | |
 | **M6** | Memory lens (`dai_memory_why` on the open file) + replay scrubbing | |
 
-M2 is where `TOOL_BLOCKED` becomes real. Hooks see a tool call proposed and
-executed; only the harness's own guardrail knows a call was *refused* and which
-deny pattern matched. That event is the one no black-box supervisor can show,
-so it is worth the harness-side work.
+### The bridge, and why the harness was not patched
+
+M2 was going to add event emission to the harness. It did not need any: 
+`policy_check.py` already records every guardrail refusal, `run_check.py`
+already writes evidence records, and the pipeline already keeps phase and gate
+state on disk. `packages/shell/src/ingest/harnessBridge.js` reads those three
+harness-native formats and translates them into `ade-event/v1`.
+
+Reading instead of patching means the ADE installs beside a harness without
+modifying that repository, so updating one never breaks the other. Event ids are
+derived from the artefact that produced them, so re-reading after a restart is
+free — the store dedupes.
+
+`TOOL_BLOCKED` is the event this buys. Hooks see a tool call proposed and
+executed; only the guardrail knows a call was **refused** and which deny pattern
+matched. Run against a real `.daiharness` directory it surfaced 8 refusals that
+nothing had ever displayed.
 
 ---
 

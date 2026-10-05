@@ -14,10 +14,22 @@
     "tail": "node packages/shell/src/cli.js tail",
     "doctor": "node packages/shell/src/cli.js doctor",
     "start": "electron .",
-    "fixture": "node scripts/make-fixture.js"
+    "fixture": "node scripts/make-fixture.js",
+    "bridge": "node scripts/bridge-sync.js"
   },
   "devDependencies": {
     "electron": "^33.4.11"
   },
-  "main": "packages/app/main.js"
+  "main": "packages/app/main.js",
+  "bin": {
+    "ade": "bin/ade.js"
+  },
+  "files": [
+    "bin",
+    "packages",
+    "scripts",
+    "install.ps1",
+    "README.md",
+    "docs"
+  ]
 }

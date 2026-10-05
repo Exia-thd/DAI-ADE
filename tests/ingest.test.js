@@ -247,3 +247,56 @@ test('tool calls nest under their own turn, not the session', () => {
   assert.equal(turns[1].children[0].actor.id, 'Bash');
   assert.notEqual(turns[0].id, turns[1].id, 'turns must not share a span id');
 });
+
+test('shortHash only ever emits base32 characters', () => {
+  // The first version re-seeded with a signed XOR, so any input whose hash
+  // exceeded 2^31 indexed the alphabet with a negative number and produced the
+  // literal string "undefined" — identical for every such input, which made
+  // unrelated spans collide. Windows paths hit it immediately.
+  const { shortHash } = require('../packages/shared/src/events.js');
+  const B = String.fromCharCode(92); // a backslash, written so no tool can eat it
+  const inputs = [
+    `C:${B}Users${B}thdat${B}AppData${B}Local${B}Temp${B}ade-real`,
+    'C:/Users/thdat/Downloads/forgewright/dai-nexus',
+    '', 'a', 'sess-abc:Bash:{"command":"ls"}',
+  ];
+  for (let i = 0; i < 5000; i++) inputs.push(`path/to/project-${i}${B}x`);
+
+  const alphabet = /^[0-9A-HJKMNP-TV-Z]+$/;
+  const seen = new Map();
+  for (const input of inputs) {
+    for (const len of [8, 10, 12, 25]) {
+      const h = shortHash(input, len);
+      assert.equal(h.length, len, `length for ${JSON.stringify(input)}`);
+      assert.ok(alphabet.test(h), `${JSON.stringify(input)} -> ${JSON.stringify(h)}`);
+    }
+    const key = shortHash(input, 12);
+    assert.ok(!seen.has(key) || seen.get(key) === input,
+      `collision: ${JSON.stringify(input)} and ${JSON.stringify(seen.get(key))}`);
+    seen.set(key, input);
+  }
+});
+
+test('a closer with no opener is an instant, not an unplaceable span', () => {
+  const index = new RunIndex();
+  index.add(makeEvent({
+    type: 'TOOL_BLOCKED', run_id: 'run_blk', span_id: 'sp_b1', parent_span_id: null,
+    actor: { kind: 'tool', id: 'Bash' }, ts: '2026-10-05T10:00:00.000Z',
+    payload: { pattern: 'rm -rf' },
+  }));
+  const node = index.tree('run_blk')[0];
+  assert.equal(node.status, 'failed');
+  assert.equal(node.durationMs, 0, 'an instant has a duration, not null');
+  assert.equal(node.instantaneous, true);
+  assert.equal(node.type, 'TOOL_PROPOSED', 'it is still a tool-call span');
+});
+
+test('an evidence record opens and closes one verification span', () => {
+  const index = new RunIndex();
+  const base = { run_id: 'run_ev', span_id: 'sp_ev', parent_span_id: null, actor: { kind: 'tool', id: 'verify' } };
+  index.add(makeEvent({ ...base, type: 'EVIDENCE_WRITTEN', ts: '2026-10-05T10:00:00.000Z' }));
+  index.add(makeEvent({ ...base, type: 'VERIFY_PASSED', ts: '2026-10-05T10:00:02.000Z' }));
+  const node = index.tree('run_ev')[0];
+  assert.equal(node.status, 'closed', 'a verdict closes the verification');
+  assert.equal(node.durationMs, 2000);
+});

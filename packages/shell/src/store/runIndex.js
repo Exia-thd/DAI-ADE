@@ -24,6 +24,10 @@ const SPAN_CLOSERS = {
   PHASE_ENTERED: ['PHASE_EXITED'],
   GATE_REQUESTED: ['GATE_APPROVED', 'GATE_REJECTED'],
   ESCALATION_REQUESTED: ['ESCALATION_RESULT'],
+  // A verification opens when its record is written and closes on the verdict.
+  // Without this pair every bridged evidence record stayed "open" forever, so
+  // a finished run showed a column of unresolved spans.
+  EVIDENCE_WRITTEN: ['VERIFY_PASSED', 'VERIFY_FAILED'],
 };
 
 const OPENERS = new Set(Object.keys(SPAN_CLOSERS));
@@ -105,6 +109,16 @@ class RunIndex {
       if (span.status === 'open') span.actor = event.actor;
     }
     if (CLOSER_TO_OPENER.has(event.type)) {
+      // A closer with no opener is a real case, not corruption: a guardrail
+      // refusal is bridged from the harness even when the tool call it stopped
+      // never produced a proposal event — being stopped is why. Treat it as an
+      // instant at its own timestamp rather than leaving openedAt null, which
+      // rendered as a span of unknown duration that no view could place.
+      if (!span.openedAt) {
+        span.openedAt = event.ts;
+        span.instantaneous = true;
+        if (!span.type) span.type = CLOSER_TO_OPENER.get(event.type);
+      }
       span.closedAt = event.ts;
       span.status = FAILURE_CLOSERS.has(event.type) ? 'failed' : 'closed';
       span.closedBy = event.type;
@@ -147,6 +161,7 @@ class RunIndex {
           openedAt: span.openedAt,
           closedAt: span.closedAt,
           durationMs: span.openedAt && span.closedAt ? Date.parse(span.closedAt) - Date.parse(span.openedAt) : null,
+          instantaneous: !!span.instantaneous,
           eventCount: span.events.length,
           children: build(span.id),
         }));

@@ -91,10 +91,22 @@ function shortHash(input, length = 10) {
     h ^= input.charCodeAt(i);
     h = Math.imul(h, 0x01000193) >>> 0;
   }
+  // Everything below stays unsigned. The first version re-seeded with `h ^ n`,
+  // which is a *signed* 32-bit result: for any h >= 2^31 it went negative,
+  // B32[negative] was undefined, and the hash came back as the literal string
+  // "undefined". Worse than ugly — every input that hit that path produced the
+  // same text, so two unrelated spans could share an id and merge in the tree.
   let out = '';
-  let v = h;
-  while (out.length < length) { out = B32[v % 32] + out; v = Math.floor(v / 32) || (v = h ^ out.length); }
-  return out.slice(0, length);
+  let v = h >>> 0;
+  for (let i = 0; i < length; i++) {
+    out = B32[v % 32] + out;
+    v = Math.floor(v / 32);
+    if (v === 0) {
+      h = Math.imul(h ^ (i + 1), 0x01000193) >>> 0;
+      v = h;
+    }
+  }
+  return out;
 }
 
 function isPlainObject(v) {
