@@ -324,6 +324,8 @@ function select(spanId) {
 function render(next) {
   snap = next;
   renderChrome();
+  renderGate();
+  if (view === 'workspaces') renderWorkspaces();
   renderCounters();
   renderFlow();
   renderRoster();
@@ -349,3 +351,220 @@ window.ade.getSnapshot().then(render);
 // An open span's bar should keep growing while the run is live, even in the
 // gaps between events.
 setInterval(() => { if (snap?.summary?.openSpans) renderFlow(); }, 1000);
+
+/* ======================================================= the workflow half = */
+
+let view = 'observe';
+let selectedWorkspace = null;
+
+function setView(next) {
+  view = next;
+  document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.view === next));
+  $('grid').hidden = next !== 'observe';
+  $('workspaces').hidden = next !== 'workspaces';
+  $('counters').hidden = next !== 'observe';
+  renderGate();
+  if (next === 'workspaces') renderWorkspaces();
+}
+
+document.querySelectorAll('.tab').forEach((t) =>
+  t.addEventListener('click', () => setView(t.dataset.view)));
+
+function stateTags(ws) {
+  if (!ws.managed) return [['', 'not managed here']];
+  if (ws.statusError) return [['dirty', ws.statusError]];
+  const s = ws.status;
+  if (!s) return [];
+  const tags = [];
+  if (s.ahead) tags.push(['ahead', `${s.ahead} commit${s.ahead === 1 ? '' : 's'}`]);
+  if (s.uncommitted.length) tags.push(['dirty', `${s.uncommitted.length} uncommitted`]);
+  if (!tags.length) tags.push(['clean', 'clean']);
+  return tags;
+}
+
+function renderWorkspaces() {
+  const host = $('wsList');
+  const list = (snap && snap.workspaces) || [];
+  host.textContent = '';
+  if (!list.length) {
+    const p = document.createElement('p');
+    p.className = 'dim';
+    p.textContent = snap && snap.project ? 'no worktrees yet' : 'open a project first';
+    host.append(p);
+    return;
+  }
+
+  for (const ws of list) {
+    const card = document.createElement('div');
+    card.className = `ws${ws.isMain ? ' main' : ''}${ws.taskId === selectedWorkspace ? ' sel' : ''}`;
+
+    const top = document.createElement('div');
+    top.className = 'ws-top';
+
+    const id = document.createElement('span');
+    id.className = 'ws-id';
+    id.textContent = ws.isMain ? '(main)' : (ws.taskId || ws.path);
+
+    const branch = document.createElement('span');
+    branch.className = 'ws-branch';
+    branch.textContent = ws.branch || ws.head || '';
+
+    const state = document.createElement('span');
+    state.className = 'ws-state';
+    for (const pair of stateTags(ws)) {
+      const tag = document.createElement('span');
+      tag.className = `tag ${pair[0]}`;
+      tag.textContent = pair[1];
+      state.append(tag, document.createTextNode(' '));
+    }
+
+    top.append(id, branch, state);
+    card.append(top);
+
+    const objective = ws.contract && ws.contract.objective;
+    if (objective) {
+      const o = document.createElement('div');
+      o.className = 'ws-obj';
+      o.textContent = objective;
+      card.append(o);
+    }
+
+    if (ws.managed) {
+      card.addEventListener('click', () => selectWorkspace(ws.taskId));
+
+      const actions = document.createElement('div');
+      actions.className = 'ws-actions';
+
+      const diffBtn = document.createElement('button');
+      diffBtn.className = 'btn';
+      diffBtn.textContent = 'Diff';
+      diffBtn.addEventListener('click', (e) => { e.stopPropagation(); selectWorkspace(ws.taskId); });
+
+      const rmBtn = document.createElement('button');
+      rmBtn.className = 'btn';
+      rmBtn.textContent = 'Remove';
+      rmBtn.addEventListener('click', (e) => { e.stopPropagation(); removeWorkspace(ws); });
+
+      actions.append(diffBtn, rmBtn);
+      card.append(actions);
+    }
+    host.append(card);
+  }
+}
+
+async function selectWorkspace(taskId) {
+  selectedWorkspace = taskId;
+  renderWorkspaces();
+  $('wsDiffHint').textContent = taskId;
+  $('wsDiff').textContent = '';
+  try {
+    renderDiff(await window.ade.worktreeDiff(taskId));
+  } catch (err) {
+    showWsError(err.message);
+  }
+}
+
+function renderDiff(text) {
+  const host = $('wsDiff');
+  host.textContent = '';
+  if (!text || !text.trim()) {
+    const note = document.createElement('div');
+    note.className = 'empty-note';
+    note.textContent = 'No changes against the commit this task started from.';
+    host.append(note);
+    return;
+  }
+  const frag = document.createDocumentFragment();
+  for (const line of text.split('\n')) {
+    const el = document.createElement('span');
+    let cls = 'dl';
+    if (line.startsWith('+++') || line.startsWith('---') ||
+        line.startsWith('diff ') || line.startsWith('index ')) cls += ' meta';
+    else if (line.startsWith('@@')) cls += ' hunk';
+    else if (line.startsWith('+')) cls += ' add';
+    else if (line.startsWith('-')) cls += ' del';
+    el.className = cls;
+    el.textContent = line || ' ';
+    frag.append(el);
+  }
+  host.append(frag);
+}
+
+function showWsError(message) {
+  const box = $('wsError');
+  box.textContent = message;
+  box.hidden = false;
+  setTimeout(() => { box.hidden = true; }, 8000);
+}
+
+async function removeWorkspace(ws) {
+  const dirty = ws.status ? ws.status.uncommitted.length : 0;
+  // Never discard an agent's work on one click. The engine refuses a dirty
+  // worktree outright; this is where someone decides to override that, so it
+  // has to be a decision rather than a stray click on a row.
+  if (dirty && !confirm(`${ws.taskId} has ${dirty} uncommitted change(s).\nRemove it and discard them?`)) return;
+  try {
+    await window.ade.worktreeRemove(ws.taskId, Boolean(dirty), true);
+    if (selectedWorkspace === ws.taskId) {
+      selectedWorkspace = null;
+      $('wsDiff').textContent = '';
+      $('wsDiffHint').textContent = 'select a worktree';
+    }
+    render(await window.ade.refreshWorkspaces());
+  } catch (err) {
+    showWsError(err.message);
+  }
+}
+
+$('wsCreate').addEventListener('click', async () => {
+  const taskId = $('wsId').value.trim();
+  if (!taskId) return showWsError('a task id is required');
+  try {
+    await window.ade.worktreeCreate(taskId, $('wsObjective').value.trim());
+    $('wsId').value = '';
+    $('wsObjective').value = '';
+    render(await window.ade.refreshWorkspaces());
+    selectWorkspace(taskId);
+  } catch (err) {
+    showWsError(err.message);
+  }
+});
+
+/* ------------------------------------------------------- the gate banner -- */
+
+/**
+ * A gate is waiting when the run holds a GATE_REQUESTED whose span never closed.
+ *
+ * Derived from the event stream rather than asked of the harness on a timer.
+ * The stream is already here, and polling a short-lived MCP server several
+ * times a second to ask the same question would spawn a process per poll.
+ */
+function pendingGate() {
+  if (!snap || !snap.events) return null;
+  const open = new Map();
+  for (const e of snap.events) {
+    if (e.type === 'GATE_REQUESTED') open.set(e.span_id, e);
+    else if (e.type === 'GATE_APPROVED' || e.type === 'GATE_REJECTED') open.delete(e.span_id);
+  }
+  const all = [...open.values()];
+  return all.length ? all[all.length - 1] : null;
+}
+
+function renderGate() {
+  const bar = $('gatebar');
+  const gate = view === 'observe' ? pendingGate() : null;
+  bar.hidden = !gate;
+  if (!gate) return;
+  const name = (gate.payload && gate.payload.gate) || 'a gate';
+  $('gatetext').textContent = `${name} is waiting for a decision.`;
+}
+
+$('approveBtn').addEventListener('click', async () => {
+  const btn = $('approveBtn');
+  btn.disabled = true;
+  $('gatemsg').textContent = 'approving...';
+  const out = await window.ade.approveGate();
+  $('gatemsg').textContent = out.ok ? 'approved' : out.error;
+  btn.disabled = false;
+  if (out.ok) setTimeout(() => { $('gatemsg').textContent = ''; }, 4000);
+});

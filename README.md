@@ -58,6 +58,12 @@ ade work diff <id>       # review what it changed
 ade work rm <id>         # remove it    --force --delete-branch
 ```
 
+The window has two tabs. **Observe** is the glass box: the flow timeline, the
+spawn roster, the inspector, the raw stream, and a bar across the top when a
+gate is waiting — with the button that approves it. **Workspaces** is the
+workflow half: every worktree with its objective and how far it has diverged,
+a diff for each, and create/remove.
+
 Restart Claude Code in the watched project so the hooks take effect.
 
 ---
@@ -185,7 +191,7 @@ Three properties worth keeping:
 | **M1** | Electron window: Flow timeline, Roster, Inspector (read-only) | next |
 | **M2** | Harness bridge: `TOOL_BLOCKED`, `EVIDENCE_WRITTEN`, `VERIFY_*`, `PHASE_*`, `GATE_*` read out of what the harness already writes | **done** |
 | **M3** | Control plane: gate approve/reject over MCP, webhook listener | |
-| **M4** | Worktrees: isolation per task, status and diff | **engine done** - UI pane next |
+| **M4** | Worktrees: isolation per task, status and diff, in the window | **done** |
 | **M5** | Batched diff line comments, back to the agent as one message | |
 | **M6** | Terminal per worktree (node-pty + xterm.js) | |
 | **M7** | Memory lens (`dai_memory_why` on the open file) + replay scrubbing | |

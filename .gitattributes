@@ -1,0 +1,14 @@
+# Normalise to LF in the repository; git checks out native on Windows.
+# Without this every commit from a Windows checkout warns about CRLF, and the
+# warnings train you to ignore the one that eventually matters.
+* text=auto eol=lf
+
+# Windows-only entry points must stay CRLF on disk: PowerShell 5.1 mis-parses a
+# here-string in an LF-only .ps1, and cmd is unreliable with LF line endings.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+*.png binary
+*.jpg binary
+*.ico binary

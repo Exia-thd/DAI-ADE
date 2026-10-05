@@ -19,6 +19,9 @@ const os = require('os');
 const { RunDirectoryTailer } = require('../shell/src/ingest/tailer.js');
 const { RunIndex } = require('../shell/src/store/runIndex.js');
 const { eventsDir } = require('../emitter/src/emit.js');
+const bridge = require('../shell/src/ingest/harnessBridge.js');
+const worktrees = require('../shell/src/git/worktrees.js');
+const mcp = require('../shell/src/mcp/client.js');
 
 const PREFS = path.join(app.getPath('userData'), 'prefs.json');
 const MAX_EVENTS_TO_RENDERER = 400;
@@ -60,8 +63,28 @@ function watchProject(dir) {
   });
   tailer.on('invalid', (d) => { send('ade:invalid', d); });
   tailer.start();
+  syncHarness();
   dirty = true;
 }
+
+/**
+ * Pull whatever the harness has recorded into the event store.
+ *
+ * Without this the window never showed a TOOL_BLOCKED at all: the bridge
+ * existed and was tested, but only the CLI ever called it, so the one event no
+ * black-box supervisor can produce was missing from the only place anyone
+ * looks. Cheap to repeat - event ids are derived, so a re-read writes nothing.
+ */
+function syncHarness() {
+  if (!project) return;
+  try {
+    const result = bridge.sync(project);
+    if (result.written > 0) dirty = true;
+  } catch (err) {
+    console.warn('harness bridge:', err.message);
+  }
+}
+setInterval(syncHarness, 5000);
 
 /* ---------------------------------------------------------- snapshot ----- */
 
@@ -78,6 +101,7 @@ function snapshot() {
 
   return {
     project,
+    workspaces: listWorkspaces(),
     eventsDir: project ? eventsDir(project) : null,
     runs,
     selected: runId,
@@ -87,6 +111,28 @@ function snapshot() {
     truncated: run ? Math.max(0, run.events.length - events.length) : 0,
     stats: tailer ? tailer.stats : null,
   };
+}
+
+/**
+ * Worktrees, with their status. Status shells out per worktree, so it is kept
+ * out of the 250ms snapshot loop by caching: a parallel run with eight workers
+ * would otherwise spawn sixteen git processes four times a second.
+ */
+let workspaceCache = { at: 0, value: [] };
+function listWorkspaces(force = false) {
+  if (!project) return [];
+  const now = Date.now();
+  if (!force && now - workspaceCache.at < 2000) return workspaceCache.value;
+  let value = [];
+  try {
+    value = worktrees.list(project).map((entry) => {
+      if (!entry.managed) return entry;
+      try { return { ...entry, status: worktrees.status(project, entry.taskId) }; }
+      catch (err) { return { ...entry, statusError: err.message }; }
+    });
+  } catch { value = []; }
+  workspaceCache = { at: now, value };
+  return value;
 }
 
 function send(channel, payload) {
@@ -131,6 +177,43 @@ ipcMain.handle('ade:getSnapshot', () => snapshot());
 ipcMain.handle('ade:selectRun', (_e, runId) => {
   selected = runId;
   return snapshot();
+});
+
+/* --- worktrees: the workflow half ---------------------------------------- */
+
+ipcMain.handle('ade:worktreeCreate', (_e, { taskId, objective }) => {
+  const made = worktrees.create(project, taskId, { objective: objective || undefined });
+  listWorkspaces(true);
+  dirty = true;
+  return made;
+});
+
+ipcMain.handle('ade:worktreeRemove', (_e, { taskId, force, deleteBranch }) => {
+  const out = worktrees.remove(project, taskId, { force, deleteBranch });
+  listWorkspaces(true);
+  dirty = true;
+  return out;
+});
+
+ipcMain.handle('ade:worktreeDiff', (_e, { taskId, file }) => worktrees.diff(project, taskId, { file }));
+
+ipcMain.handle('ade:refreshWorkspaces', () => { listWorkspaces(true); dirty = true; return snapshot(); });
+
+/* --- control plane: the only place this tool writes ----------------------- */
+
+ipcMain.handle('ade:harnessState', async () => {
+  try { return { ok: true, state: await mcp.harness.state(project) }; }
+  catch (err) { return { ok: false, error: err.message }; }
+});
+
+ipcMain.handle('ade:approveGate', async () => {
+  try {
+    const result = await mcp.harness.approveGate(project);
+    syncHarness();
+    return { ok: true, result };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });
 
 ipcMain.handle('ade:openProject', async () => {

@@ -15,6 +15,17 @@ contextBridge.exposeInMainWorld('ade', {
   getSnapshot: () => ipcRenderer.invoke('ade:getSnapshot'),
   selectRun: (runId) => ipcRenderer.invoke('ade:selectRun', runId),
   openProject: () => ipcRenderer.invoke('ade:openProject'),
+
+  // The workflow half.
+  worktreeCreate: (taskId, objective) => ipcRenderer.invoke('ade:worktreeCreate', { taskId, objective }),
+  worktreeRemove: (taskId, force, deleteBranch) =>
+    ipcRenderer.invoke('ade:worktreeRemove', { taskId, force, deleteBranch }),
+  worktreeDiff: (taskId, file) => ipcRenderer.invoke('ade:worktreeDiff', { taskId, file }),
+  refreshWorkspaces: () => ipcRenderer.invoke('ade:refreshWorkspaces'),
+
+  // The only write path in the tool. Everything else observes.
+  harnessState: () => ipcRenderer.invoke('ade:harnessState'),
+  approveGate: () => ipcRenderer.invoke('ade:approveGate'),
   onSnapshot: (fn) => {
     const handler = (_e, snap) => fn(snap);
     ipcRenderer.on('ade:snapshot', handler);

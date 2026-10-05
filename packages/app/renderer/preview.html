@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;">
-<title>DAI ADE — renderer preview</title>
+<title>DAI ADE - renderer preview</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,12 +13,23 @@
   <div class="brand"><b>DAI</b> ADE</div>
   <button id="openBtn" class="btn">Open project…</button>
   <div id="project" class="path">no project</div>
+  <div class="tabs" role="tablist">
+    <button class="tab on" data-view="observe" role="tab">Observe</button>
+    <button class="tab" data-view="workspaces" role="tab">Workspaces</button>
+  </div>
   <div class="spacer"></div>
   <select id="runSelect" class="select" aria-label="Run"></select>
   <div id="live" class="live" title="tailer state"><i></i><span>idle</span></div>
 </header>
 
 <section id="counters" aria-label="Run counters"></section>
+
+<div id="gatebar" class="gatebar" hidden>
+  <span class="g-dot"></span>
+  <span id="gatetext">A gate is waiting for a decision.</span>
+  <button id="approveBtn" class="btn btn-go">Approve gate</button>
+  <span id="gatemsg" class="g-msg"></span>
+</div>
 
 <main id="grid">
   <section class="pane" id="flowPane">
@@ -39,6 +50,24 @@
   <section class="pane" id="streamPane">
     <h2>Stream <small id="streamHint"></small></h2>
     <div id="stream" class="stream"></div>
+  </section>
+</main>
+
+<main id="workspaces" hidden>
+  <section class="pane" id="wsListPane">
+    <h2>Worktrees <small>one isolated checkout per parallel task</small></h2>
+    <div class="ws-new">
+      <input id="wsId" class="input" placeholder="task-id" spellcheck="false" autocomplete="off">
+      <input id="wsObjective" class="input grow" placeholder="objective (optional)" autocomplete="off">
+      <button id="wsCreate" class="btn btn-go">Create</button>
+    </div>
+    <div id="wsError" class="ws-error" hidden></div>
+    <div id="wsList" class="ws-list"></div>
+  </section>
+
+  <section class="pane" id="wsDiffPane">
+    <h2>Diff <small id="wsDiffHint">select a worktree</small></h2>
+    <div id="wsDiff" class="diff"></div>
   </section>
 </main>
 

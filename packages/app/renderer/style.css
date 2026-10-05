@@ -131,3 +131,67 @@ code{font-family:var(--mono);background:var(--line2);padding:.05rem .25rem;borde
 .lane .label.d3{padding-left:36px} .lane .label.d4{padding-left:48px}
 .lane .label.d5{padding-left:60px} .lane .label.d6{padding-left:72px}
 .lane .label.d7{padding-left:84px} .lane .label.d8{padding-left:96px}
+
+/* ---------------------------------------------------------------- tabs --- */
+.tabs{display:flex;gap:2px;background:var(--line2);padding:2px;border-radius:6px}
+.tab{
+  font:inherit;font-size:.72rem;padding:.3rem .7rem;border:0;border-radius:4px;cursor:pointer;
+  background:transparent;color:var(--muted);
+}
+.tab:hover{color:var(--blue)}
+.tab.on{background:var(--paper);color:var(--ink);font-weight:650;box-shadow:0 1px 2px rgba(10,37,64,.07)}
+
+/* -------------------------------------------------------------- gatebar -- */
+.gatebar{
+  display:flex;align-items:center;gap:.6rem;margin:.5rem .8rem 0;padding:.5rem .7rem;
+  background:#fff8ed;border:1px solid #f3d9ac;border-radius:7px;font-size:.78rem;color:#7c4a03;
+}
+.gatebar .g-dot{width:8px;height:8px;border-radius:50%;background:var(--amber);flex:none}
+.gatebar .g-msg{font-family:var(--mono);font-size:.68rem;color:var(--muted)}
+.btn-go{background:var(--blue);color:#fff;border-color:var(--blue)}
+.btn-go:hover{background:var(--blue-d);color:#fff}
+.btn-go:disabled{opacity:.5;cursor:not-allowed}
+
+/* ----------------------------------------------------------- workspaces -- */
+#workspaces{flex:1;display:grid;gap:.5rem;padding:.5rem .8rem .8rem;min-height:0;grid-template-columns:1fr 1.3fr}
+#workspaces[hidden]{display:none}
+.ws-new{display:flex;gap:.4rem;padding:.55rem .7rem;border-bottom:1px solid var(--line2)}
+.input{
+  font:inherit;font-family:var(--mono);font-size:.74rem;padding:.35rem .5rem;border-radius:5px;
+  border:1px solid var(--line);background:var(--paper);color:var(--ink);min-width:0;width:140px;
+}
+.input.grow{flex:1;width:auto}
+.input:focus{outline:2px solid rgba(18,99,210,.25);border-color:var(--blue)}
+.ws-error{margin:.5rem .7rem 0;padding:.4rem .55rem;border-radius:5px;background:var(--redbg);border:1px solid #f3cdb6;color:var(--red);font-size:.73rem}
+.ws-list{overflow:auto;padding:.5rem .7rem;flex:1;min-height:0}
+.ws{border:1px solid var(--line);border-radius:7px;padding:.55rem .65rem;margin-bottom:.4rem;cursor:pointer;background:var(--paper)}
+.ws:hover{border-color:var(--blue)}
+.ws.sel{border-color:var(--blue);box-shadow:0 0 0 2px rgba(18,99,210,.13)}
+.ws.main{background:#f7fafe;cursor:default}
+.ws.main:hover{border-color:var(--line)}
+.ws-top{display:flex;align-items:baseline;gap:.5rem}
+.ws-id{font-family:var(--mono);font-weight:700;font-size:.82rem}
+.ws-branch{font-family:var(--mono);font-size:.68rem;color:var(--muted)}
+.ws-state{margin-left:auto;font-family:var(--mono);font-size:.66rem}
+.ws-obj{font-size:.73rem;color:var(--muted);margin-top:.2rem}
+.ws-actions{display:flex;gap:.35rem;margin-top:.45rem}
+.ws-actions .btn{font-size:.65rem;padding:.26rem .5rem}
+.tag{font-family:var(--mono);font-size:.63rem;padding:.08rem .35rem;border-radius:3px}
+.tag.dirty{background:#fff3e0;color:var(--amber)}
+.tag.ahead{background:#e6f2ff;color:var(--blue)}
+.tag.clean{background:#eef7f3;color:var(--green)}
+
+/* ---------------------------------------------------------------- diff --- */
+.diff{overflow:auto;padding:0;flex:1;min-height:0;font-family:var(--mono);font-size:.7rem;line-height:1.5}
+.diff .dl{display:block;padding:0 .7rem;white-space:pre-wrap;word-break:break-word}
+.diff .add{background:#eefaf0;color:#14532d}
+.diff .del{background:#fdeeea;color:#7f1d1d}
+.diff .hunk{background:#eef4fb;color:var(--blue);font-weight:650}
+.diff .meta{color:var(--faint)}
+.diff .empty-note{padding:.7rem;color:var(--faint);font-family:var(--sans);font-size:.78rem}
+
+/* The hidden attribute only sets display:none through the UA stylesheet, so any
+   author rule that sets display -- grid or flex here -- silently beats it. Both
+   views rendered at once until this existed. Stated per element rather than as
+   a blanket [hidden] rule so it is obvious which ones need it and why. */
+#grid[hidden], #counters[hidden], #workspaces[hidden], #gatebar[hidden], .ws-error[hidden] { display: none; }

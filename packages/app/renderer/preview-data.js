@@ -3,342 +3,385 @@
  */
 window.ade = {
   _snap: {
-    "project": "C:\\Users\\thdat\\AppData\\Local\\Temp\\ade-e2e2",
-    "eventsDir": "C:\\Users\\thdat\\AppData\\Local\\Temp\\ade-e2e2\\.dai-ade\\events",
+    "project": "C:\\Users\\thdat\\AppData\\Local\\Temp\\ade-ui",
+    "workspaces": [
+      {
+        "path": "C:\\Users\\thdat\\AppData\\Local\\Temp\\ade-ui",
+        "branch": "main",
+        "head": "be8589313efeffe815af8637bb658edcf16b13e0",
+        "bare": false,
+        "detached": false,
+        "locked": false,
+        "isMain": true,
+        "managed": false,
+        "taskId": null,
+        "contract": null
+      },
+      {
+        "path": "C:\\Users\\thdat\\AppData\\Local\\Temp\\ade-ui\\.worktrees\\idempotency",
+        "branch": "parallel/idempotency",
+        "head": "be8589313efeffe815af8637bb658edcf16b13e0",
+        "bare": false,
+        "detached": false,
+        "locked": false,
+        "isMain": false,
+        "managed": true,
+        "taskId": "idempotency",
+        "contract": {
+          "task_id": "idempotency",
+          "objective": "make charge idempotent",
+          "outputs": [],
+          "forbidden": [],
+          "base_commit": "be8589313efeffe815af8637bb658edcf16b13e0",
+          "created_at": "2026-10-05T10:02:48Z"
+        },
+        "status": {
+          "taskId": "idempotency",
+          "path": "C:\\Users\\thdat\\AppData\\Local\\Temp\\ade-ui\\.worktrees\\idempotency",
+          "branch": "parallel/idempotency",
+          "base": "be8589313efeffe815af8637bb658edcf16b13e0",
+          "contract": {
+            "task_id": "idempotency",
+            "objective": "make charge idempotent",
+            "outputs": [],
+            "forbidden": [],
+            "base_commit": "be8589313efeffe815af8637bb658edcf16b13e0",
+            "created_at": "2026-10-05T10:02:48Z"
+          },
+          "uncommitted": [
+            {
+              "state": "??",
+              "file": "CONTRACT.json"
+            }
+          ],
+          "committed": [],
+          "ahead": 0
+        }
+      },
+      {
+        "path": "C:\\Users\\thdat\\AppData\\Local\\Temp\\ade-ui\\.worktrees\\retry-budget",
+        "branch": "parallel/retry-budget",
+        "head": "be8589313efeffe815af8637bb658edcf16b13e0",
+        "bare": false,
+        "detached": false,
+        "locked": false,
+        "isMain": false,
+        "managed": true,
+        "taskId": "retry-budget",
+        "contract": {
+          "task_id": "retry-budget",
+          "objective": "cap declined-card retries at two",
+          "outputs": [],
+          "forbidden": [],
+          "base_commit": "be8589313efeffe815af8637bb658edcf16b13e0",
+          "created_at": "2026-10-05T10:02:47Z"
+        },
+        "status": {
+          "taskId": "retry-budget",
+          "path": "C:\\Users\\thdat\\AppData\\Local\\Temp\\ade-ui\\.worktrees\\retry-budget",
+          "branch": "parallel/retry-budget",
+          "base": "be8589313efeffe815af8637bb658edcf16b13e0",
+          "contract": {
+            "task_id": "retry-budget",
+            "objective": "cap declined-card retries at two",
+            "outputs": [],
+            "forbidden": [],
+            "base_commit": "be8589313efeffe815af8637bb658edcf16b13e0",
+            "created_at": "2026-10-05T10:02:47Z"
+          },
+          "uncommitted": [
+            {
+              "state": "M",
+              "file": "billing.js"
+            },
+            {
+              "state": "??",
+              "file": "CONTRACT.json"
+            }
+          ],
+          "committed": [],
+          "ahead": 0
+        }
+      }
+    ],
+    "eventsDir": "C:\\Users\\thdat\\AppData\\Local\\Temp\\ade-ui\\.dai-ade\\events",
     "runs": [
       {
-        "id": "run_3D0P2N3D0G",
-        "startedAt": "2026-10-05T07:57:01.527Z",
-        "endedAt": "2026-10-05T07:57:03.002Z",
-        "durationMs": 1475,
-        "events": 11,
-        "spans": 6,
-        "openSpans": 1,
-        "tools": 2,
-        "blocked": 0,
-        "failed": 1,
-        "workers": 1,
+        "id": "run_harness_B2KDRK8E",
+        "startedAt": "2026-10-05T09:52:49.083Z",
+        "endedAt": "2026-10-05T12:00:09Z",
+        "durationMs": 7639917,
+        "events": 7,
+        "spans": 7,
+        "openSpans": 2,
+        "tools": 0,
+        "blocked": 2,
+        "failed": 0,
+        "workers": 0,
         "evidence": 0,
         "cost": 0
       }
     ],
-    "selected": "run_3D0P2N3D0G",
+    "selected": "run_harness_B2KDRK8E",
     "tree": [
       {
-        "id": "sp_root",
+        "id": "sp_gate_VJS0G9WZ36",
         "actor": {
           "kind": "root",
-          "id": "s2"
+          "id": "gate:gate1_brd"
         },
-        "type": "RUN_STARTED",
+        "type": "GATE_REQUESTED",
+        "status": "closed",
+        "openedAt": "2026-10-05T09:52:49.083Z",
+        "closedAt": "2026-10-05T09:52:49.083Z",
+        "durationMs": 0,
+        "instantaneous": true,
+        "eventCount": 1,
+        "children": []
+      },
+      {
+        "id": "sp_ph_XRHMFSHHBT",
+        "actor": {
+          "kind": "root",
+          "id": "phase:interpret"
+        },
+        "type": "PHASE_ENTERED",
+        "status": "closed",
+        "openedAt": "2026-10-05T10:02:49.083Z",
+        "closedAt": "2026-10-05T10:02:49.083Z",
+        "durationMs": 0,
+        "instantaneous": true,
+        "eventCount": 1,
+        "children": []
+      },
+      {
+        "id": "sp_ph_S6F1N9Z1AJ",
+        "actor": {
+          "kind": "root",
+          "id": "phase:define"
+        },
+        "type": "PHASE_ENTERED",
+        "status": "closed",
+        "openedAt": "2026-10-05T10:02:49.083Z",
+        "closedAt": "2026-10-05T10:02:49.083Z",
+        "durationMs": 0,
+        "instantaneous": true,
+        "eventCount": 1,
+        "children": []
+      },
+      {
+        "id": "sp_ph_Y1C31SQWN3",
+        "actor": {
+          "kind": "root",
+          "id": "phase:build"
+        },
+        "type": "PHASE_ENTERED",
         "status": "open",
-        "openedAt": "2026-10-05T07:57:01.527Z",
+        "openedAt": "2026-10-05T10:02:49.083Z",
         "closedAt": null,
         "durationMs": null,
+        "instantaneous": false,
         "eventCount": 1,
-        "children": [
-          {
-            "id": "sp_turn_WCS6SGKZHF",
-            "actor": {
-              "kind": "root",
-              "id": "s2"
-            },
-            "type": "TURN_STARTED",
-            "status": "closed",
-            "openedAt": "2026-10-05T07:57:01.673Z",
-            "closedAt": "2026-10-05T07:57:02.126Z",
-            "durationMs": 453,
-            "eventCount": 2,
-            "children": [
-              {
-                "id": "sp_t_R20G24R20G22",
-                "actor": {
-                  "kind": "tool",
-                  "id": "Read"
-                },
-                "type": "TOOL_PROPOSED",
-                "status": "closed",
-                "openedAt": "2026-10-05T07:57:01.820Z",
-                "closedAt": "2026-10-05T07:57:01.978Z",
-                "durationMs": 158,
-                "eventCount": 2,
-                "children": []
-              }
-            ]
-          },
-          {
-            "id": "sp_turn_7JRYPA2MQ3",
-            "actor": {
-              "kind": "root",
-              "id": "s2"
-            },
-            "type": "TURN_STARTED",
-            "status": "closed",
-            "openedAt": "2026-10-05T07:57:02.281Z",
-            "closedAt": "2026-10-05T07:57:03.002Z",
-            "durationMs": 721,
-            "eventCount": 2,
-            "children": [
-              {
-                "id": "sp_w_undefined37W",
-                "actor": {
-                  "kind": "worker",
-                  "id": "sub-9",
-                  "tier": "Explore"
-                },
-                "type": "WORKER_SPAWNED",
-                "status": "closed",
-                "openedAt": "2026-10-05T07:57:02.419Z",
-                "closedAt": "2026-10-05T07:57:02.859Z",
-                "durationMs": 440,
-                "eventCount": 2,
-                "children": []
-              },
-              {
-                "id": "sp_t_undefined35X",
-                "actor": {
-                  "kind": "tool",
-                  "id": "Bash"
-                },
-                "type": "TOOL_PROPOSED",
-                "status": "failed",
-                "openedAt": "2026-10-05T07:57:02.562Z",
-                "closedAt": "2026-10-05T07:57:02.703Z",
-                "durationMs": 141,
-                "eventCount": 2,
-                "children": []
-              }
-            ]
-          }
-        ]
+        "children": []
+      },
+      {
+        "id": "sp_gate_6T92PR5T9M",
+        "actor": {
+          "kind": "root",
+          "id": "gate:gate3_build"
+        },
+        "type": "GATE_REQUESTED",
+        "status": "open",
+        "openedAt": "2026-10-05T10:02:49.083Z",
+        "closedAt": null,
+        "durationMs": null,
+        "instantaneous": false,
+        "eventCount": 1,
+        "children": []
+      },
+      {
+        "id": "sp_blk_Z0J12M6SQ1",
+        "actor": {
+          "kind": "tool",
+          "id": "Bash"
+        },
+        "type": "TOOL_PROPOSED",
+        "status": "failed",
+        "openedAt": "2026-10-05T12:00:03Z",
+        "closedAt": "2026-10-05T12:00:03Z",
+        "durationMs": 0,
+        "instantaneous": true,
+        "eventCount": 1,
+        "children": []
+      },
+      {
+        "id": "sp_blk_3ZX1146RH8",
+        "actor": {
+          "kind": "tool",
+          "id": "Bash"
+        },
+        "type": "TOOL_PROPOSED",
+        "status": "failed",
+        "openedAt": "2026-10-05T12:00:09Z",
+        "closedAt": "2026-10-05T12:00:09Z",
+        "durationMs": 0,
+        "instantaneous": true,
+        "eventCount": 1,
+        "children": []
       }
     ],
     "summary": {
-      "id": "run_3D0P2N3D0G",
-      "startedAt": "2026-10-05T07:57:01.527Z",
-      "endedAt": "2026-10-05T07:57:03.002Z",
-      "durationMs": 1475,
-      "events": 11,
-      "spans": 6,
-      "openSpans": 1,
-      "tools": 2,
-      "blocked": 0,
-      "failed": 1,
-      "workers": 1,
+      "id": "run_harness_B2KDRK8E",
+      "startedAt": "2026-10-05T09:52:49.083Z",
+      "endedAt": "2026-10-05T12:00:09Z",
+      "durationMs": 7639917,
+      "events": 7,
+      "spans": 7,
+      "openSpans": 2,
+      "tools": 0,
+      "blocked": 2,
+      "failed": 0,
+      "workers": 0,
       "evidence": 0,
       "cost": 0
     },
     "events": [
       {
         "v": 1,
-        "id": "01M45H1VPQEWMQTN1T8J2YGEZE",
-        "ts": "2026-10-05T07:57:01.527Z",
-        "run_id": "run_3D0P2N3D0G",
-        "span_id": "sp_root",
+        "id": "H7K04J3TAZ83JP6RV8B1P51WDE",
+        "ts": "2026-10-05T12:00:03Z",
+        "run_id": "run_harness_B2KDRK8E",
+        "span_id": "sp_blk_Z0J12M6SQ1",
+        "parent_span_id": null,
+        "actor": {
+          "kind": "tool",
+          "id": "Bash"
+        },
+        "type": "TOOL_BLOCKED",
+        "payload": {
+          "source": "harness.telemetry",
+          "tool": "Bash",
+          "pattern": "rm[[:space:]]+-rf",
+          "mode": "strict",
+          "severity": "deny"
+        }
+      },
+      {
+        "v": 1,
+        "id": "H5Y984WCJDBK7D85X2G13EYB3Q",
+        "ts": "2026-10-05T12:00:09Z",
+        "run_id": "run_harness_B2KDRK8E",
+        "span_id": "sp_blk_3ZX1146RH8",
+        "parent_span_id": null,
+        "actor": {
+          "kind": "tool",
+          "id": "Bash"
+        },
+        "type": "TOOL_BLOCKED",
+        "payload": {
+          "source": "harness.telemetry",
+          "tool": "Bash",
+          "pattern": "git[[:space:]]+push[[:space:]]+--force",
+          "mode": "strict",
+          "severity": "deny"
+        }
+      },
+      {
+        "v": 1,
+        "id": "HWMD1E3TN3KYE25M72DQ8FSZEB",
+        "ts": "2026-10-05T10:02:49.083Z",
+        "run_id": "run_harness_B2KDRK8E",
+        "span_id": "sp_ph_XRHMFSHHBT",
         "parent_span_id": null,
         "actor": {
           "kind": "root",
-          "id": "s2"
+          "id": "phase:interpret"
         },
-        "type": "RUN_STARTED",
+        "type": "PHASE_EXITED",
         "payload": {
-          "hook": "SessionStart",
-          "cwd": "C:/Users/thdat/AppData/Local/Temp/ade-e2e2"
+          "source": "harness.pipeline",
+          "phase": "interpret",
+          "status": "passed",
+          "mode": "FULL_BUILD",
+          "goal": "cap declined-card retries"
         }
       },
       {
         "v": 1,
-        "id": "01M45H1VV97ZHV7YR67SV2QA25",
-        "ts": "2026-10-05T07:57:01.673Z",
-        "run_id": "run_3D0P2N3D0G",
-        "span_id": "sp_turn_WCS6SGKZHF",
-        "parent_span_id": "sp_root",
+        "id": "HCEJHDC2E8XQSQK4ZGJ1V7ZRAX",
+        "ts": "2026-10-05T10:02:49.083Z",
+        "run_id": "run_harness_B2KDRK8E",
+        "span_id": "sp_ph_S6F1N9Z1AJ",
+        "parent_span_id": null,
         "actor": {
           "kind": "root",
-          "id": "s2"
+          "id": "phase:define"
         },
-        "type": "TURN_STARTED",
+        "type": "PHASE_EXITED",
         "payload": {
-          "hook": "UserPromptSubmit",
-          "cwd": "C:/Users/thdat/AppData/Local/Temp/ade-e2e2",
-          "prompt": "turn one"
+          "source": "harness.pipeline",
+          "phase": "define",
+          "status": "passed",
+          "mode": "FULL_BUILD",
+          "goal": "cap declined-card retries"
         }
       },
       {
         "v": 1,
-        "id": "01M45H1VZWM151H41EYBBPY4RS",
-        "ts": "2026-10-05T07:57:01.820Z",
-        "run_id": "run_3D0P2N3D0G",
-        "span_id": "sp_t_R20G24R20G22",
-        "parent_span_id": "sp_turn_WCS6SGKZHF",
-        "actor": {
-          "kind": "tool",
-          "id": "Read"
-        },
-        "type": "TOOL_PROPOSED",
-        "payload": {
-          "hook": "PreToolUse",
-          "tool": "Read",
-          "input": {
-            "f": "a.ts"
-          },
-          "cwd": "C:/Users/thdat/AppData/Local/Temp/ade-e2e2"
-        }
-      },
-      {
-        "v": 1,
-        "id": "01M45H1W4T77NJQN1X5KD4JF90",
-        "ts": "2026-10-05T07:57:01.978Z",
-        "run_id": "run_3D0P2N3D0G",
-        "span_id": "sp_t_R20G24R20G22",
-        "parent_span_id": "sp_turn_WCS6SGKZHF",
-        "actor": {
-          "kind": "tool",
-          "id": "Read"
-        },
-        "type": "TOOL_EXECUTED",
-        "payload": {
-          "hook": "PostToolUse",
-          "tool": "Read",
-          "input": {
-            "f": "a.ts"
-          },
-          "response": {
-            "ok": 1
-          },
-          "cwd": "C:/Users/thdat/AppData/Local/Temp/ade-e2e2"
-        }
-      },
-      {
-        "v": 1,
-        "id": "01M45H1W9E33115J5BQH3JK6G2",
-        "ts": "2026-10-05T07:57:02.126Z",
-        "run_id": "run_3D0P2N3D0G",
-        "span_id": "sp_turn_WCS6SGKZHF",
-        "parent_span_id": "sp_root",
+        "id": "HME9MT202THSA2RYJFK3R1Y4FQ",
+        "ts": "2026-10-05T10:02:49.083Z",
+        "run_id": "run_harness_B2KDRK8E",
+        "span_id": "sp_ph_Y1C31SQWN3",
+        "parent_span_id": null,
         "actor": {
           "kind": "root",
-          "id": "s2"
+          "id": "phase:build"
         },
-        "type": "TURN_ENDED",
+        "type": "PHASE_ENTERED",
         "payload": {
-          "hook": "Stop",
-          "cwd": "C:/Users/thdat/AppData/Local/Temp/ade-e2e2"
+          "source": "harness.pipeline",
+          "phase": "build",
+          "status": "running",
+          "mode": "FULL_BUILD",
+          "goal": "cap declined-card retries"
         }
       },
       {
         "v": 1,
-        "id": "01M45H1WE9151F63JXXBGWW0YB",
-        "ts": "2026-10-05T07:57:02.281Z",
-        "run_id": "run_3D0P2N3D0G",
-        "span_id": "sp_turn_7JRYPA2MQ3",
-        "parent_span_id": "sp_root",
+        "id": "H2N7PGRBTSZ41AKCXR23ZCX5HH",
+        "ts": "2026-10-05T09:52:49.083Z",
+        "run_id": "run_harness_B2KDRK8E",
+        "span_id": "sp_gate_VJS0G9WZ36",
+        "parent_span_id": null,
         "actor": {
           "kind": "root",
-          "id": "s2"
+          "id": "gate:gate1_brd"
         },
-        "type": "TURN_STARTED",
+        "type": "GATE_APPROVED",
         "payload": {
-          "hook": "UserPromptSubmit",
-          "cwd": "C:/Users/thdat/AppData/Local/Temp/ade-e2e2",
-          "prompt": "turn two"
+          "source": "harness.pipeline",
+          "gate": "gate1_brd",
+          "approved": true,
+          "summary": "BRD ready"
         }
       },
       {
         "v": 1,
-        "id": "01M45H1WJK8RK7K7V72TVCA7Z6",
-        "ts": "2026-10-05T07:57:02.419Z",
-        "run_id": "run_3D0P2N3D0G",
-        "span_id": "sp_w_undefined37W",
-        "parent_span_id": "sp_turn_7JRYPA2MQ3",
-        "actor": {
-          "kind": "worker",
-          "id": "sub-9",
-          "tier": "Explore"
-        },
-        "type": "WORKER_SPAWNED",
-        "payload": {
-          "hook": "SubagentStart",
-          "cwd": "C:/Users/thdat/AppData/Local/Temp/ade-e2e2"
-        }
-      },
-      {
-        "v": 1,
-        "id": "01M45H1WQ2HVBJ0C821W78PFVD",
-        "ts": "2026-10-05T07:57:02.562Z",
-        "run_id": "run_3D0P2N3D0G",
-        "span_id": "sp_t_undefined35X",
-        "parent_span_id": "sp_turn_7JRYPA2MQ3",
-        "actor": {
-          "kind": "tool",
-          "id": "Bash"
-        },
-        "type": "TOOL_PROPOSED",
-        "payload": {
-          "hook": "PreToolUse",
-          "tool": "Bash",
-          "input": {
-            "command": "bad"
-          },
-          "cwd": "C:/Users/thdat/AppData/Local/Temp/ade-e2e2"
-        }
-      },
-      {
-        "v": 1,
-        "id": "01M45H1WVFQXQPBMTD3RG06N6A",
-        "ts": "2026-10-05T07:57:02.703Z",
-        "run_id": "run_3D0P2N3D0G",
-        "span_id": "sp_t_undefined35X",
-        "parent_span_id": "sp_turn_7JRYPA2MQ3",
-        "actor": {
-          "kind": "tool",
-          "id": "Bash"
-        },
-        "type": "TOOL_FAILED",
-        "payload": {
-          "hook": "PostToolUse",
-          "tool": "Bash",
-          "input": {
-            "command": "bad"
-          },
-          "response": {
-            "is_error": true
-          },
-          "cwd": "C:/Users/thdat/AppData/Local/Temp/ade-e2e2"
-        }
-      },
-      {
-        "v": 1,
-        "id": "01M45H1X0BHCQXVAXPFC6VSVQ5",
-        "ts": "2026-10-05T07:57:02.859Z",
-        "run_id": "run_3D0P2N3D0G",
-        "span_id": "sp_w_undefined37W",
-        "parent_span_id": "sp_turn_7JRYPA2MQ3",
-        "actor": {
-          "kind": "worker",
-          "id": "sub-9"
-        },
-        "type": "WORKER_DELIVERED",
-        "payload": {
-          "hook": "SubagentStop",
-          "cwd": "C:/Users/thdat/AppData/Local/Temp/ade-e2e2"
-        }
-      },
-      {
-        "v": 1,
-        "id": "01M45H1X4THY0RT2PZ46FF0RTJ",
-        "ts": "2026-10-05T07:57:03.002Z",
-        "run_id": "run_3D0P2N3D0G",
-        "span_id": "sp_turn_7JRYPA2MQ3",
-        "parent_span_id": "sp_root",
+        "id": "H4K3J1E6N48K2CT5RMF3SZ2A4J",
+        "ts": "2026-10-05T10:02:49.083Z",
+        "run_id": "run_harness_B2KDRK8E",
+        "span_id": "sp_gate_6T92PR5T9M",
+        "parent_span_id": null,
         "actor": {
           "kind": "root",
-          "id": "s2"
+          "id": "gate:gate3_build"
         },
-        "type": "TURN_ENDED",
+        "type": "GATE_REQUESTED",
         "payload": {
-          "hook": "Stop",
-          "cwd": "C:/Users/thdat/AppData/Local/Temp/ade-e2e2"
+          "source": "harness.pipeline",
+          "gate": "gate3_build",
+          "approved": false,
+          "pending": true
         }
       }
     ],
@@ -347,9 +390,19 @@ window.ade = {
       "files": 1
     }
   },
+  _diffs: {
+    "idempotency": "",
+    "retry-budget": "diff --git a/billing.js b/billing.js\nindex 15026c2..bef178b 100644\n--- a/billing.js\n+++ b/billing.js\n@@ -1 +1,2 @@\n-export function charge(){}\n+const MAX_RETRIES = 2;\n+export function charge(){ /* retry */ }\n"
+  },
   getSnapshot(){ return Promise.resolve(this._snap); },
   selectRun(){ return Promise.resolve(this._snap); },
   openProject(){ return Promise.resolve(this._snap); },
+  refreshWorkspaces(){ return Promise.resolve(this._snap); },
+  worktreeDiff(taskId){ return Promise.resolve(this._diffs[taskId] || ''); },
+  worktreeCreate(){ return Promise.reject(new Error('the preview is read-only')); },
+  worktreeRemove(){ return Promise.reject(new Error('the preview is read-only')); },
+  harnessState(){ return Promise.resolve({ ok:false, error:'the preview is read-only' }); },
+  approveGate(){ return Promise.resolve({ ok:false, error:'the preview is read-only' }); },
   onSnapshot(){ return () => {}; },
   onInvalid(){ return () => {}; },
 };
