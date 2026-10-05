@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:;">
+<title>DAI ADE</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header id="bar">
+  <div class="brand"><b>DAI</b> ADE</div>
+  <button id="openBtn" class="btn">Open project…</button>
+  <div id="project" class="path">no project</div>
+  <div class="spacer"></div>
+  <select id="runSelect" class="select" aria-label="Run"></select>
+  <div id="live" class="live" title="tailer state"><i></i><span>idle</span></div>
+</header>
+
+<section id="counters" aria-label="Run counters"></section>
+
+<main id="grid">
+  <section class="pane" id="flowPane">
+    <h2>Flow <small id="flowHint">session → turns → tools and sub-agents</small></h2>
+    <div id="flow" class="flow"></div>
+  </section>
+
+  <section class="pane" id="rosterPane">
+    <h2>Roster <small>who spawned whom</small></h2>
+    <div id="roster" class="roster"></div>
+  </section>
+
+  <section class="pane" id="inspectorPane">
+    <h2>Inspector <small id="inspectorHint">select a span</small></h2>
+    <div id="inspector" class="inspector"></div>
+  </section>
+
+  <section class="pane" id="streamPane">
+    <h2>Stream <small id="streamHint"></small></h2>
+    <div id="stream" class="stream"></div>
+  </section>
+</main>
+
+<div id="empty" class="empty">
+  <p><b>Nothing to watch yet.</b></p>
+  <p>Open the project whose agents you want to observe, then install the emitter into it:</p>
+  <pre>node packages/shell/src/cli.js install-hooks --project &lt;dir&gt;</pre>
+  <p class="dim">The emitter is added to that project's <code>.claude/settings.json</code> only.
+     User-level hooks are left alone.</p>
+</div>
+
+<script src="renderer.js"></script>
+</body>
+</html>

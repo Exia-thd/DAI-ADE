@@ -1,0 +1,133 @@
+:root{
+  --bg:#eef5fd; --bg2:#dce9f9; --paper:#fff;
+  --ink:#0a2540; --ink2:#173f66; --muted:#4d6f93; --faint:#8aa8c6;
+  --line:#cfe0f2; --line2:#e7f0fa;
+  --blue:#1263d2; --blue-d:#0a3f8f; --sky:#2b9ae8;
+  --red:#c2410c; --redbg:#fff5f0; --green:#0f766e; --amber:#b45309;
+  --mono:ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:var(--sans);color:var(--ink);
+  background:linear-gradient(160deg,#f6fafe,var(--bg) 45%,var(--bg2));
+  height:100vh;display:flex;flex-direction:column;overflow:hidden;font-size:13px;
+}
+
+/* ---------------------------------------------------------------- bar --- */
+#bar{
+  display:flex;align-items:center;gap:.6rem;padding:.55rem .8rem;
+  background:rgba(255,255,255,.82);border-bottom:1px solid var(--line);backdrop-filter:blur(8px);
+}
+.brand{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.brand b{color:var(--ink)}
+.btn{
+  font:inherit;font-size:.74rem;padding:.34rem .6rem;border-radius:5px;cursor:pointer;
+  background:var(--paper);border:1px solid var(--line);color:var(--ink2);
+}
+.btn:hover{border-color:var(--blue);color:var(--blue)}
+.path{font-family:var(--mono);font-size:.68rem;color:var(--muted);max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.spacer{flex:1}
+.select{font:inherit;font-family:var(--mono);font-size:.7rem;padding:.3rem .4rem;border-radius:5px;border:1px solid var(--line);background:var(--paper);color:var(--ink)}
+.live{display:flex;align-items:center;gap:.35rem;font-family:var(--mono);font-size:.65rem;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--faint);display:block}
+.live.on i{background:var(--green);box-shadow:0 0 0 3px rgba(15,118,110,.16)}
+
+/* ----------------------------------------------------------- counters --- */
+#counters{display:flex;gap:.4rem;padding:.5rem .8rem 0;flex-wrap:wrap}
+.counter{background:var(--paper);border:1px solid var(--line);border-radius:6px;padding:.32rem .55rem;display:flex;gap:.4rem;align-items:baseline}
+.counter .v{font-family:var(--mono);font-weight:700;color:var(--blue)}
+.counter .l{font-size:.64rem;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+.counter.bad .v{color:var(--red)}
+
+/* --------------------------------------------------------------- grid --- */
+#grid{
+  flex:1;display:grid;gap:.5rem;padding:.5rem .8rem .8rem;min-height:0;
+  grid-template-columns:1.55fr 1fr;grid-template-rows:1.25fr 1fr;
+}
+.pane{background:var(--paper);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.pane h2{
+  font-size:.66rem;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);
+  padding:.5rem .7rem;border-bottom:1px solid var(--line2);display:flex;gap:.5rem;align-items:baseline;font-weight:700;
+}
+.pane h2 small{font-weight:400;letter-spacing:.04em;text-transform:none;color:var(--faint);font-size:.66rem}
+#flowPane{grid-row:1/3}
+.flow,.roster,.inspector,.stream{overflow:auto;padding:.55rem .7rem;flex:1;min-height:0}
+
+/* --------------------------------------------------------------- flow --- */
+.lane{display:grid;grid-template-columns:168px 1fr;gap:.5rem;align-items:center;padding:.1rem 0}
+.lane .label{
+  font-family:var(--mono);font-size:.66rem;color:var(--ink2);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;
+}
+.lane .label .k{color:var(--faint)}
+.track{position:relative;height:17px;background:var(--line2);border-radius:3px}
+.bar{
+  position:absolute;top:2px;bottom:2px;border-radius:3px;background:var(--sky);cursor:pointer;
+  min-width:3px;border:1px solid rgba(0,0,0,.06);
+}
+.bar:hover{filter:brightness(.92)}
+.bar.sel{outline:2px solid var(--blue);outline-offset:1px}
+.bar.root{background:#9ec7f2}
+.bar.turn{background:#5aa9f0}
+.bar.worker{background:#0f766e}
+.bar.tool{background:var(--blue)}
+.bar.failed{background:var(--red)}
+.bar.open{background:repeating-linear-gradient(90deg,#f0b429,#f0b429 5px,#f6cb62 5px,#f6cb62 10px)}
+.axis{display:grid;grid-template-columns:168px 1fr;gap:.5rem;margin-top:.3rem}
+.axis .ticks{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.6rem;color:var(--faint)}
+
+/* ------------------------------------------------------------- roster --- */
+.node{padding:.22rem 0;cursor:pointer;border-radius:4px}
+.node:hover{background:var(--line2)}
+.node.sel{background:#e6f0fb}
+.node .row{display:flex;gap:.4rem;align-items:baseline;font-size:.72rem}
+.node .mark{font-family:var(--mono);width:1em}
+.node .who{font-family:var(--mono);color:var(--ink)}
+.node .type{color:var(--faint);font-size:.66rem}
+.node .dur{margin-left:auto;font-family:var(--mono);font-size:.65rem;color:var(--muted)}
+.ok{color:var(--green)} .bad{color:var(--red)} .wait{color:var(--amber)}
+
+/* ---------------------------------------------------------- inspector --- */
+.kv{display:grid;grid-template-columns:92px 1fr;gap:.3rem .55rem;font-size:.72rem;margin-bottom:.5rem}
+.kv .k{color:var(--muted);font-family:var(--mono);font-size:.65rem}
+.kv .v{font-family:var(--mono);color:var(--ink);word-break:break-all}
+pre{
+  background:#f6fafe;border:1px solid var(--line2);border-radius:5px;padding:.5rem;
+  font-family:var(--mono);font-size:.67rem;line-height:1.5;overflow-x:auto;color:var(--ink2);white-space:pre-wrap;word-break:break-word;
+}
+.evrow{border-top:1px solid var(--line2);padding:.35rem 0;font-size:.7rem}
+.evrow:first-child{border-top:0}
+.evrow .t{font-family:var(--mono);color:var(--faint);font-size:.63rem}
+
+/* ------------------------------------------------------------- stream --- */
+.line{display:grid;grid-template-columns:72px 136px 1fr;gap:.45rem;font-family:var(--mono);font-size:.66rem;padding:.11rem 0;border-bottom:1px solid #f2f7fc;cursor:pointer}
+.line:hover{background:var(--line2)}
+.line .ts{color:var(--faint)}
+.line .ty{font-weight:600}
+.line .de{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.line.bad{background:var(--redbg)}
+.line.bad .ty{color:var(--red)}
+
+/* -------------------------------------------------------------- empty --- */
+.empty{
+  position:fixed;inset:auto 0 0 0;top:0;display:none;align-items:center;justify-content:center;
+  flex-direction:column;gap:.55rem;background:var(--bg);text-align:center;padding:2rem;z-index:5;
+}
+.empty.show{display:flex}
+.empty p{color:var(--muted);max-width:60ch;font-size:.82rem}
+.empty b{color:var(--ink)}
+.empty pre{text-align:left}
+.dim{color:var(--faint);font-size:.74rem}
+code{font-family:var(--mono);background:var(--line2);padding:.05rem .25rem;border-radius:3px}
+
+/* Depth indentation as static classes. Setting padding-left per element would
+   create a style attribute, which style-src 'self' reports as a violation on
+   every row of every render. */
+.d0{padding-left:0}    .d1{padding-left:14px} .d2{padding-left:28px}
+.d3{padding-left:42px} .d4{padding-left:56px} .d5{padding-left:70px}
+.d6{padding-left:84px} .d7{padding-left:98px} .d8{padding-left:112px}
+.lane .label.d1{padding-left:12px} .lane .label.d2{padding-left:24px}
+.lane .label.d3{padding-left:36px} .lane .label.d4{padding-left:48px}
+.lane .label.d5{padding-left:60px} .lane .label.d6{padding-left:72px}
+.lane .label.d7{padding-left:84px} .lane .label.d8{padding-left:96px}
