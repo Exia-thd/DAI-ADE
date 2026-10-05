@@ -234,7 +234,14 @@ if ($hasBash) {
     # `DAI Harness: .` and then failed to find ./scripts/mcp/...
     Push-Location $harnessDir
     try { & $bashExe $setupPosix $projectPosix } finally { Pop-Location }
-    if ($LASTEXITCODE -ne 0) { Warn "harness setup exited $LASTEXITCODE -- the ADE still works; harness gates may not" }
+    if ($LASTEXITCODE -ne 0) {
+      # The harness registers MCP servers into every client config it knows,
+      # and refuses to touch one it cannot parse. That is its safety check,
+      # not a failure of this install: the servers are registered into the
+      # project's own .mcp.json below either way, which is what Claude Code
+      # reads for a project. Report it accurately instead of alarmingly.
+      Warn "harness setup exited $LASTEXITCODE. The project is still wired - this installer registers the MCP servers itself. For the harness side run: bash scripts/bootstrap/daiharness-setup.sh --diagnose"
+    }
     else { Ok 'harness configured for this project' }
   } else {
     Warn "harness setup script not found at $setup"
@@ -254,7 +261,7 @@ Run 'node' @('packages/shell/src/cli.js', 'install-hooks', '--project', $Project
 $mcpPath = Join-Path $Project '.mcp.json'
 $mcp = $null
 if (Test-Path $mcpPath) {
-  try { $mcp = Get-Content $mcpPath -Raw | ConvertFrom-Json } catch { Warn "$mcpPath is not valid JSON; left untouched" }
+  try { $mcp = ((Get-Content $mcpPath -Raw) -replace ([string][char]0xFEFF), "") | ConvertFrom-Json } catch { Warn "$mcpPath is not valid JSON; left untouched" }
 }
 if ($null -eq $mcp) { $mcp = [pscustomobject]@{} }
 if ($null -eq $mcp.PSObject.Properties['mcpServers']) {
@@ -287,7 +294,13 @@ if ($null -ne $memoryDir) {
   }
 }
 
-$mcp | ConvertTo-Json -Depth 12 | Set-Content -Path $mcpPath -Encoding utf8
+# Set-Content -Encoding utf8 writes a BOM on PowerShell 5.1, and a BOM makes
+# the file invalid JSON for any strict reader -- Python refuses it outright,
+# and the harness setup reported it as a malformed client config and declined
+# to touch it. Write UTF-8 with no BOM explicitly.
+$mcpJson = $mcp | ConvertTo-Json -Depth 12
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText($mcpPath, $mcpJson, $utf8NoBom)
 Ok "wrote $mcpPath"
 
 # ---------------------------------------------------------------- launcher --
