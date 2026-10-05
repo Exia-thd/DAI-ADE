@@ -25,7 +25,7 @@ contextBridge.exposeInMainWorld('ade', {
 
   // The only write path in the tool. Everything else observes.
   harnessState: () => ipcRenderer.invoke('ade:harnessState'),
-  approveGate: () => ipcRenderer.invoke('ade:approveGate'),
+  decideGate: (gate, approved) => ipcRenderer.invoke('ade:decideGate', { gate, approved }),
   onSnapshot: (fn) => {
     const handler = (_e, snap) => fn(snap);
     ipcRenderer.on('ade:snapshot', handler);

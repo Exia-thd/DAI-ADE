@@ -35,6 +35,15 @@ function derivedId(...parts) {
   return `H${shortHash(parts.join('\u0000'), 25)}`;
 }
 
+/**
+ * The span a gate occupies. Exported because a decision recorded by this tool
+ * has to land on the same span the bridge created for the request, or the
+ * timeline shows a request that never closes beside a decision about nothing.
+ */
+function gateSpanId(name) {
+  return `sp_gate_${shortHash(String(name), 10)}`;
+}
+
 function readJson(file) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
 }
@@ -204,6 +213,7 @@ function fromPipeline(project, ctx) {
     }));
   }
 
+  const named = new Set(Object.keys(state.gates || {}));
   for (const [name, gate] of Object.entries(state.gates || {})) {
     const ts = typeof gate.ts === 'number' ? new Date(gate.ts * 1000).toISOString() : mtime;
     events.push(makeEvent({
@@ -211,20 +221,24 @@ function fromPipeline(project, ctx) {
       ts,
       type: gate.approved ? 'GATE_APPROVED' : 'GATE_REQUESTED',
       run_id: ctx.runId,
-      span_id: `sp_gate_${shortHash(name, 10)}`,
+      span_id: gateSpanId(name),
       parent_span_id: ctx.parent,
       actor: { kind: 'root', id: `gate:${name}` },
       payload: { source: 'harness.pipeline', gate: name, approved: !!gate.approved, summary: gate.summary ?? null },
     }));
   }
 
-  if (state.pending_gate) {
+  // Only when the pending gate is not already in `gates`. The harness records
+  // a requested gate in both places at once, so emitting from both reported one
+  // waiting gate as two - and the id below used to include the file's mtime,
+  // which minted a fresh duplicate on every write of the state file.
+  if (state.pending_gate && !named.has(String(state.pending_gate))) {
     events.push(makeEvent({
-      id: derivedId('gate-pending', String(state.pending_gate), mtime),
+      id: derivedId('gate-pending', String(state.pending_gate)),
       ts: mtime,
       type: 'GATE_REQUESTED',
       run_id: ctx.runId,
-      span_id: `sp_gate_${shortHash(String(state.pending_gate), 10)}`,
+      span_id: gateSpanId(state.pending_gate),
       parent_span_id: ctx.parent,
       actor: { kind: 'root', id: `gate:${state.pending_gate}` },
       payload: { source: 'harness.pipeline', gate: state.pending_gate, approved: false, pending: true },
@@ -234,6 +248,27 @@ function fromPipeline(project, ctx) {
 }
 
 /* ---------------------------------------------------------------- sync --- */
+
+/**
+ * Append events to the project's store, skipping ids it already holds.
+ * Shared with the decision path so everything that writes goes one way.
+ */
+function appendEvents(project, runId, events) {
+  if (!events.length) return 0;
+  const dir = path.join(project, '.dai-ade', 'events');
+  const file = path.join(dir, `${runId}.jsonl`);
+  fs.mkdirSync(dir, { recursive: true });
+  const known = new Set();
+  try {
+    for (const line of fs.readFileSync(file, 'utf8').split(String.fromCharCode(10))) {
+      if (!line.trim()) continue;
+      try { known.add(JSON.parse(line).id); } catch { /* torn tail */ }
+    }
+  } catch { /* first write */ }
+  const fresh = events.filter((e) => !known.has(e.id));
+  if (fresh.length) fs.appendFileSync(file, fresh.map((e) => JSON.stringify(e)).join(String.fromCharCode(10)) + String.fromCharCode(10));
+  return fresh.length;
+}
 
 /** True when this project looks like it has a harness to bridge. */
 function detect(project) {
@@ -274,4 +309,4 @@ function sync(project) {
   return { written: fresh.length, total: produced.length, runId: ctx.runId };
 }
 
-module.exports = { sync, detect, correlate, fromTelemetry, fromEvidence, fromPipeline, derivedId };
+module.exports = { sync, detect, correlate, fromTelemetry, fromEvidence, fromPipeline, derivedId, gateSpanId, appendEvents };

@@ -81,7 +81,7 @@ captureDiffs().then((diffs) => {
     `  worktreeDiff(taskId){ return Promise.resolve(this._diffs[taskId] || ''); },\n` +
     readOnly('worktreeCreate') + readOnly('worktreeRemove') +
     `  harnessState(){ return Promise.resolve({ ok:false, error:'the preview is read-only' }); },\n` +
-    `  approveGate(){ return Promise.resolve({ ok:false, error:'the preview is read-only' }); },\n` +
+    `  decideGate(){ return Promise.resolve({ ok:false, error:'the preview is read-only' }); },\n` +
     `  onSnapshot(){ return () => {}; },\n` +
     `  onInvalid(){ return () => {}; },\n};\n`);
   report();

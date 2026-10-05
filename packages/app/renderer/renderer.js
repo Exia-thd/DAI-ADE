@@ -559,12 +559,31 @@ function renderGate() {
   $('gatetext').textContent = `${name} is waiting for a decision.`;
 }
 
-$('approveBtn').addEventListener('click', async () => {
-  const btn = $('approveBtn');
-  btn.disabled = true;
-  $('gatemsg').textContent = 'approving...';
-  const out = await window.ade.approveGate();
-  $('gatemsg').textContent = out.ok ? 'approved' : out.error;
-  btn.disabled = false;
+/**
+ * Record a decision on the gate the banner is currently showing.
+ *
+ * The gate name travels with the decision rather than being looked up in the
+ * main process: the harness tool requires it, and taking it from what the
+ * person was looking at means the decision cannot land on a different gate
+ * that became pending while they were reading.
+ */
+async function decideGate(approved) {
+  const gate = pendingGate();
+  const name = gate && gate.payload && gate.payload.gate;
+  if (!name) { $('gatemsg').textContent = 'nothing is waiting'; return; }
+
+  const approveBtn = $('approveBtn');
+  const rejectBtn = $('rejectBtn');
+  approveBtn.disabled = true;
+  rejectBtn.disabled = true;
+  $('gatemsg').textContent = approved ? 'approving...' : 'rejecting...';
+
+  const out = await window.ade.decideGate(name, approved);
+  $('gatemsg').textContent = out.ok ? (approved ? 'approved' : 'rejected') : out.error;
+  approveBtn.disabled = false;
+  rejectBtn.disabled = false;
   if (out.ok) setTimeout(() => { $('gatemsg').textContent = ''; }, 4000);
-});
+}
+
+$('approveBtn').addEventListener('click', () => decideGate(true));
+$('rejectBtn').addEventListener('click', () => decideGate(false));

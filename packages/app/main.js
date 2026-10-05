@@ -22,6 +22,7 @@ const { eventsDir } = require('../emitter/src/emit.js');
 const bridge = require('../shell/src/ingest/harnessBridge.js');
 const worktrees = require('../shell/src/git/worktrees.js');
 const mcp = require('../shell/src/mcp/client.js');
+const { makeEvent } = require('../shared/src/events.js');
 
 const PREFS = path.join(app.getPath('userData'), 'prefs.json');
 const MAX_EVENTS_TO_RENDERER = 400;
@@ -206,15 +207,46 @@ ipcMain.handle('ade:harnessState', async () => {
   catch (err) { return { ok: false, error: err.message }; }
 });
 
-ipcMain.handle('ade:approveGate', async () => {
+ipcMain.handle('ade:decideGate', async (_e, { gate, approved }) => {
   try {
-    const result = await mcp.harness.approveGate(project);
+    const result = await mcp.harness.decideGate(project, gate, approved);
+    recordDecision(gate, approved);
+    // The harness writes its state file synchronously, so the bridge can pick
+    // the decision up immediately and the banner clears without a round trip.
     syncHarness();
     return { ok: true, result };
   } catch (err) {
     return { ok: false, error: err.message };
   }
 });
+
+/**
+ * Write the decision this tool just made into the run's own stream.
+ *
+ * Measured, not assumed: the harness records a rejected gate identically to one
+ * nobody has answered - approved:false, still pending - so the bridge cannot
+ * distinguish them and does not try. This is the ADE recording an action it
+ * performed itself, on the span the bridge gave the request, so the timeline
+ * shows the request closing rather than a decision about nothing.
+ */
+function recordDecision(gate, approved) {
+  try {
+    const ctx = bridge.correlate(project);
+    const event = makeEvent({
+      type: approved ? 'GATE_APPROVED' : 'GATE_REJECTED',
+      run_id: ctx.runId,
+      span_id: bridge.gateSpanId(gate),
+      parent_span_id: ctx.parent,
+      actor: { kind: 'root', id: 'ade' },
+      payload: { source: 'ade.decision', gate, approved: Boolean(approved) },
+    });
+    if (bridge.appendEvents(project, ctx.runId, [event]) > 0) dirty = true;
+  } catch (err) {
+    // A decision that reached the harness but not the log is still a decision;
+    // never fail the action over its own audit trail.
+    console.warn('could not record the gate decision:', err.message);
+  }
+}
 
 ipcMain.handle('ade:openProject', async () => {
   const result = await dialog.showOpenDialog(win, {

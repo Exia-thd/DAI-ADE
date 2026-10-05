@@ -172,7 +172,22 @@ const HARNESS = 'dai-harness';
 
 const harness = {
   state: (project) => callTool(project, HARNESS, 'dh_get_state', {}),
-  approveGate: (project) => callTool(project, HARNESS, 'dh_approve_gate', {}),
+
+  /**
+   * Record a gate decision.
+   *
+   * `dh_approve_gate` requires both the gate name and the decision; calling it
+   * with neither returned `gate '' was never requested` and the button in the
+   * window could never have worked. The name comes from the pending gate the
+   * view is showing, so the decision is recorded against the gate the person
+   * was actually looking at rather than whatever is pending by the time the
+   * call lands.
+   */
+  decideGate: (project, gate, approved) => {
+    if (!gate) return Promise.reject(new Error('no gate name: nothing is waiting'));
+    return callTool(project, HARNESS, 'dh_approve_gate', { gate, approved: Boolean(approved) });
+  },
+
   failPipeline: (project, reason) => callTool(project, HARNESS, 'dh_fail_pipeline', { reason }),
   advancePhase: (project) => callTool(project, HARNESS, 'dh_advance_phase', {}),
 };
