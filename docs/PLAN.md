@@ -54,31 +54,30 @@ the integration seam was designed for, and is sitting unused.
 
 ---
 
-## 1. What to copy from Orca, and what not to
+## 1. The two halves
 
-Orca (MIT, open source) runs multiple coding agents in parallel, each in an
-isolated git worktree with its own terminal and its own Chromium window.
+This is one product with two jobs, and both are first-class.
 
-**Worth stealing:**
-- Worktree-per-task isolation — you already have it in `worktree_manager.py`.
-- Batched diff-line comments sent back to the agent as feedback.
-- A real browser per worktree for front-end work.
+**The workflow half.** Several coding agents working at once, each isolated in
+its own git worktree so they cannot overwrite each other, each with its own
+branch, terminal and diff to review. Batched line comments on a diff go back to
+the agent that wrote it as one message. This is the day-to-day shape of
+supervising parallel agents, and it is well understood.
 
-**Do not copy the shape of it.** Orca supervises *opaque* agents: it drives
-Claude Code, Codex, Gemini and others as black boxes. It can show you a terminal,
-a diff and a browser, because that is all those agents expose. It structurally
-cannot tell you *why* an agent did something, which rule stopped it, or whether
-"done" was ever verified.
+**The glass-box half.** A general supervisor drives agents as black boxes,
+because a third-party CLI exposes nothing else: you get a terminal, a diff and
+an exit code. This one sits on a harness and a memory layer whose internals are
+ours, so it can also show what no black-box supervisor can:
 
-Your harness emits phases, gate decisions, guardrail verdicts, evidence records,
-a rule ledger and a memory graph. So your ADE can show the thing Orca cannot:
+- which rule stopped a call, and the deny pattern that matched;
+- whether "done" was ever verified, and by which command;
+- the phase and gate the run is sitting in;
+- the decision recorded against the code under review.
 
-> **the decision trail, not just the output.**
-
-That is the product. If you build an Orca-shaped terminal-first UI you will have
-spent months to arrive at a worse Orca. Build the glass box.
-
----
+Neither half is enough alone. The workflow half without the glass box is a
+nicer terminal multiplexer. The glass box without the workflow is a dashboard
+nobody opens. Build both; the shared spine is the event stream, because a
+worktree, a blocked tool call and an evidence record are all just spans.
 
 ## 2. Architecture
 
@@ -221,7 +220,7 @@ step and an audit entry.
 
 ### e. Diff review
 Monaco diff per worktree. Markdown comments on specific lines, batched, sent back
-to the agent as one feedback message. (The one Orca idea worth copying wholesale.)
+to the agent as one feedback message.
 
 ### f. Terminal
 xterm.js attached to the worker PTY. Scrollback persisted per worktree.
@@ -350,10 +349,12 @@ dai-ade/
    └─ EVENT-SCHEMA.md            # ade-event/v1, versioned
 ```
 
-Licence note: Orca is MIT, so reading it is fine and reuse is permitted with
-attribution. Given you dropped GitNexus over its licence, keep the provenance
-clean here too — take interface ideas, write your own code, and if you ever do
-vendor anything, record it the way the memory plugin records its grammars.
+Licence note: this is built to be commercialised, so provenance has to stay
+clean. Behaviour and UX observed in other tools can be reimplemented freely;
+copied code carries its licence and copyright with it, whatever that licence is.
+Write our own, and if anything is ever vendored, record it the way the memory
+plugin records its tree-sitter grammars — version, commit, SHA-256 and the
+licence text beside it.
 
 ---
 
@@ -416,14 +417,14 @@ to render the moment it is built.
 
 ## C3 — the hook chain is not free to take
 
-`~/.claude/settings.json` on this machine points all six hook events at Orca.
-The user runs Orca but does not control it. Any plan that installs user-level
-hooks would have fought another tool for ownership of the editor's hook chain.
+`~/.claude/settings.json` on this machine already points all six hook events at
+another tool, one the user runs but does not control. Any plan that installs
+user-level hooks would have fought it for ownership of the editor's hook chain.
 
 **Correction:** install at project level only. Claude Code merges user and
-project hooks, so the emitter composes beside Orca rather than replacing it.
+project hooks, so the emitter composes beside it rather than replacing it.
 `ade install-hooks` refuses to touch the user file, and `ade doctor` reports
-Orca's ownership as information, not as a problem to fix.
+that ownership as information, not as a problem to fix.
 
 ## C4 — a schema detail, changed while implementing
 
@@ -442,3 +443,5 @@ race, same guarantee.
 - Replay and live sharing one code path.
 - The differentiator: `TOOL_BLOCKED` and the evidence contract are what a
   black-box supervisor cannot show. Still true, and now the reason M2 exists.
+- Worktree isolation as the unit of parallel work. The harness already had
+  `worktree_manager.py`; the ADE drives it rather than reinventing it.

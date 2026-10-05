@@ -3,11 +3,12 @@
 An Agent Development Environment for the **DAI Harness** — a glass box around
 agents whose internals you own.
 
-Not a general agent supervisor. [Orca](https://www.onorca.dev/) already does
-that well, and it drives agents as black boxes because that is all a third-party
-CLI exposes. This one goes the other way: it goes deep on one harness and one
-memory layer, where both ends are yours, and shows the thing a black-box
-supervisor structurally cannot — **the decision trail, not just the output**.
+Two halves, deliberately. It runs coding agents in parallel, each isolated in
+its own git worktree with its own diff to review — the workflow a general agent
+supervisor gives you. And because it sits on a harness and a memory layer whose
+internals are yours, it also shows what a supervisor driving agents as black
+boxes structurally cannot: **the decision trail, not just the output** — which
+rule stopped a call, and whether "done" was ever actually verified.
 
 Status: **M0 complete** — the ingestion path is built and proven. No window yet;
 see [Milestones](#milestones).
@@ -39,17 +40,22 @@ Windows also provides the bash the harness setup needs — the installer finds i
 through git rather than PATH, because Git for Windows does not put bash there
 and a PATH check silently skips the whole harness step.
 
-**It does not touch `~/.claude/settings.json`.** On a machine running Orca those
-hooks are Orca's. Claude Code merges user-level and project-level hooks, so the
+**It does not touch `~/.claude/settings.json`.** Those hooks may already belong
+to another tool. Claude Code merges user-level and project-level hooks, so the
 emitter is installed at project level and composes beside whatever is already
 there.
 
 Afterwards:
 
 ```
-ade          # the window
-ade tail     # follow events in a shell
-ade doctor   # what is wired up, and what is not
+ade                      # the window
+ade tail                 # follow events in a shell
+ade doctor               # what is wired up, and what is not
+
+ade work                 # worktrees, one per parallel task
+ade work new <id>        # create one   --objective "..."
+ade work diff <id>       # review what it changed
+ade work rm <id>         # remove it    --force --delete-branch
 ```
 
 Restart Claude Code in the watched project so the hooks take effect.
@@ -110,13 +116,42 @@ one.
 
 ### Hooks compose; they are not owned
 
-On this machine `~/.claude/settings.json` points every hook at Orca
-(`~/.orca/agent-hooks/claude-hook.cmd`). Claude Code merges user-level and
-project-level hooks, so **`ade install-hooks` writes only to the project's
-`.claude/settings.json`** and never touches the user file. Orca keeps its chain;
-this adds a second listener beside it. Clobbering another tool's hooks to
-install your own observability is how you break the editor you were trying to
-watch.
+A machine often has user-level hooks already pointing at some other tool.
+Claude Code merges user-level and project-level hooks, so **`ade install-hooks`
+writes only to the project's `.claude/settings.json`** and never touches the
+user file. Whatever is installed there keeps its chain; this adds a second
+listener beside it. Clobbering another tool's hooks to install your own
+observability is how you break the editor you were trying to watch.
+
+---
+
+## Parallel work
+
+Several agents at once need somewhere each that the others cannot overwrite, so
+a task is a git worktree: its own checkout, its own `parallel/<task>` branch,
+its own diff, and a merge that is an ordinary git operation.
+
+The layout is not invented here. The harness already runs parallel workers
+through `scripts/lite/worktree_manager.py` using `.worktrees/<task_id>` and a
+`CONTRACT.json` describing the worker's scope. This speaks the same layout, so a
+worktree made from the UI and one made by the harness are the same thing and
+both tools list both.
+
+Interop over coupling: these are plain git calls, so there is no Python
+dependency and it keeps working with no harness present - there are simply no
+contracts to show.
+
+```
+$ ade work
+task              branch                    state
+(main)            main                      the repository itself
+demo              parallel/demo             2 uncommitted
+  add retry budget
+```
+
+Removing a worktree that holds uncommitted work refuses, and says how much would
+be lost. Silently discarding an agent's work is the one unforgivable bug in this
+layer, so it is a test rather than a convention.
 
 ---
 
@@ -150,9 +185,10 @@ Three properties worth keeping:
 | **M1** | Electron window: Flow timeline, Roster, Inspector (read-only) | next |
 | **M2** | Harness bridge: `TOOL_BLOCKED`, `EVIDENCE_WRITTEN`, `VERIFY_*`, `PHASE_*`, `GATE_*` read out of what the harness already writes | **done** |
 | **M3** | Control plane: gate approve/reject over MCP, webhook listener | |
-| **M4** | Worktrees + diff review with batched line comments | |
-| **M5** | Terminal (node-pty + xterm.js) | |
-| **M6** | Memory lens (`dai_memory_why` on the open file) + replay scrubbing | |
+| **M4** | Worktrees: isolation per task, status and diff | **engine done** - UI pane next |
+| **M5** | Batched diff line comments, back to the agent as one message | |
+| **M6** | Terminal per worktree (node-pty + xterm.js) | |
+| **M7** | Memory lens (`dai_memory_why` on the open file) + replay scrubbing | |
 
 ### The bridge, and why the harness was not patched
 

@@ -8,9 +8,9 @@
   place; every step is skipped when it is already done.
 
   What it will NOT do, by design:
-    * touch ~/.claude/settings.json. On a machine running Orca those hooks
-      belong to Orca. Claude Code merges user-level and project-level hooks, so
-      this installs at project level and composes beside whatever is there.
+    * touch ~/.claude/settings.json. Those hooks may already belong to another
+      tool. Claude Code merges user-level and project-level hooks, so this
+      installs at project level and composes beside whatever is there.
     * modify the harness or memory repositories. The ADE reads what they
       already write, so updating one never breaks the other.
 
