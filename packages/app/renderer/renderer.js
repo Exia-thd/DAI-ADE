@@ -74,7 +74,10 @@ const fmtDur = (ms) => {
   if (ms == null) return '—';
   if (ms < 1000) return `${ms}ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
+  // Round first, then split. Rounding the remainder on its own produced
+  // "39m 60s" on the screenshot: the seconds carried but the minutes did not.
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)}m ${total % 60}s`;
 };
 
 const clock = (iso) => String(iso ?? '').slice(11, 23);
@@ -360,9 +363,10 @@ function render(next) {
   snap = next;
   defaultSelection();
   renderChrome();
+  renderFeatures();
   renderGate();
   if (view === 'workspaces') renderWorkspaces();
-  if (view === 'agents') { renderAgents(); renderAgentDetail(); }
+  if (view === 'agents') { renderAgentsView(); renderAgentDetail(); }
   renderCounters();
   renderFlow();
   renderRoster();
@@ -403,7 +407,7 @@ function setView(next) {
   $('counters').hidden = next !== 'observe';
   renderGate();
   if (next === 'workspaces') renderWorkspaces();
-  if (next === 'agents') { renderAgents(); renderAgentDetail(); }
+  if (next === 'agents') { renderAgentsView(); renderAgentDetail(); }
 }
 
 document.querySelectorAll('.tab').forEach((t) =>
@@ -667,7 +671,7 @@ function renderAgents() {
   for (const agent of agents) {
     const card = document.createElement('div');
     card.className = `agent ${agent.status}${agent.key === selectedAgent ? ' sel' : ''}`;
-    card.addEventListener('click', () => { selectedAgent = agent.key; renderAgents(); renderAgentDetail(); });
+    card.addEventListener('click', () => { selectedAgent = agent.key; renderAgentsView(); renderAgentDetail(); });
 
     const head = document.createElement('div');
     head.className = 'a-head';
@@ -811,5 +815,257 @@ function renderAgentDetail() {
       }
       host.append(row);
     }
+  }
+}
+
+/* ================================================== the agent map, as a graph = */
+
+let agentLayout = 'graph';
+
+const NODE_W = 304;
+// Three lines, not two: at 58px the model, the elapsed time and both token
+// figures were competing for one line and the screenshot came back reading
+// "10.5k in contex...". A number that is cut off is worse than one that is
+// absent, because it still looks like information.
+const NODE_H = 78;
+const GAP_Y = 12;
+const GAP_X = 78;
+
+function fmtTokens(n) {
+  if (!n) return null;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
+
+function fmtElapsed(ms) {
+  if (ms == null) return null;
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${s % 60}s`;
+}
+
+/**
+ * Lay the agents out as a left-to-right tree.
+ *
+ * Positions are computed here rather than left to the browser because the
+ * connectors have to meet the boxes exactly: an elbow drawn to where a box
+ * roughly is looks like a bug, and CSS cannot tell SVG where a flexed box
+ * landed without a second measuring pass.
+ */
+function layoutAgents(agents) {
+  const byKey = new Map(agents.map((a) => [a.key, a]));
+  const children = new Map();
+  const roots = [];
+  for (const agent of agents) {
+    if (agent.parentKey && byKey.has(agent.parentKey)) {
+      if (!children.has(agent.parentKey)) children.set(agent.parentKey, []);
+      children.get(agent.parentKey).push(agent);
+    } else {
+      roots.push(agent);
+    }
+  }
+
+  const placed = [];
+  const edges = [];
+  let y = 0;
+
+  const place = (agent, depth) => {
+    const kids = children.get(agent.key) || [];
+    if (!kids.length) {
+      const node = { agent, x: depth * (NODE_W + GAP_X), y, depth };
+      placed.push(node);
+      y += NODE_H + GAP_Y;
+      return node;
+    }
+    const kidNodes = kids.map((kid) => place(kid, depth + 1));
+    // The parent sits level with the middle of its children, which is what
+    // makes the fan read as one group rather than a list.
+    const mid = (kidNodes[0].y + kidNodes[kidNodes.length - 1].y) / 2;
+    const node = { agent, x: depth * (NODE_W + GAP_X), y: mid, depth };
+    placed.push(node);
+    for (const kid of kidNodes) edges.push({ from: node, to: kid });
+    // `y` already stands past the last child - each leaf advanced it. Advancing
+    // again by the number of children left a hole the size of the subtree under
+    // every group, which the first render showed as a page of white space.
+    return node;
+  };
+
+  for (const root of roots) {
+    place(root, 0);
+    y += GAP_Y * 2;
+  }
+  return { placed, edges };
+}
+
+function renderAgentGraph() {
+  const host = $('agentList');
+  const agents = (snap && snap.agents) || [];
+  host.textContent = '';
+  host.className = 'agent-graph';
+
+  if (!agents.length) {
+    const p = document.createElement('p');
+    p.className = 'dim';
+    p.textContent = snap && snap.project ? 'no agents seen yet' : 'open a project first';
+    host.append(p);
+    return;
+  }
+
+  const { placed, edges } = layoutAgents(agents);
+  const width = Math.max(...placed.map((n) => n.x)) + NODE_W + 24;
+  const height = Math.max(...placed.map((n) => n.y)) + NODE_H + 24;
+
+  const canvas = document.createElement('div');
+  canvas.className = 'graph-canvas';
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', String(width));
+  svg.setAttribute('height', String(height));
+  svg.classList.add('graph-edges');
+  for (const edge of edges) {
+    const x1 = edge.from.x + NODE_W;
+    const y1 = edge.from.y + NODE_H / 2;
+    const x2 = edge.to.x;
+    const y2 = edge.to.y + NODE_H / 2;
+    const mid = x1 + (x2 - x1) / 2;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M ${x1} ${y1} H ${mid} V ${y2} H ${x2}`);
+    path.setAttribute('class', edge.to.agent.status === 'working' ? 'edge live' : 'edge');
+    svg.append(path);
+  }
+  canvas.append(svg);
+
+  for (const node of placed) {
+    const agent = node.agent;
+    const box = document.createElement('div');
+    box.className = `gnode ${agent.status}${agent.key === selectedAgent ? ' sel' : ''}`;
+    box.style.left = `${node.x}px`;
+    box.style.top = `${node.y}px`;
+    box.addEventListener('click', () => { selectedAgent = agent.key; renderAgentsView(); renderAgentDetail(); });
+
+    const head = document.createElement('div');
+    head.className = 'g-head';
+    const dot = document.createElement('span');
+    dot.className = 'a-dot';
+    const name = document.createElement('span');
+    name.className = 'g-name';
+    name.textContent = agent.id;
+    name.title = agent.id;
+    head.append(dot, name);
+
+    if (agent.tier) {
+      const tier = document.createElement('span');
+      tier.className = `a-kind ${agent.kind}`;
+      tier.textContent = agent.tier;
+      head.append(tier);
+    }
+    box.append(head);
+
+    // Only facts the stream actually carries. Tokens are absent unless
+    // something reported them, and an absent number stays absent.
+    const line = (cls, text) => {
+      const el = document.createElement('div');
+      el.className = cls;
+      el.textContent = text;
+      el.title = text;
+      box.append(el);
+    };
+
+    const who = [];
+    if (agent.model) who.push(agent.model);
+    const elapsed = fmtElapsed(agent.elapsedMs);
+    if (elapsed) who.push(elapsed);
+    if (who.length) line('g-sub', who.join(' · '));
+
+    // Two different numbers, never conflated: what the agent generated, and how
+    // much context it is carrying. Adding them together would be meaningless.
+    const cost = [];
+    const context = fmtTokens(agent.contextTokens);
+    if (context) cost.push(`${context} ctx`);
+    const tokens = fmtTokens(agent.tokens);
+    if (tokens) cost.push(`${tokens} out`);
+    if (agent.doing) cost.push(agent.doing.live ? `${agent.doing.tool} running` : agent.doing.tool);
+    if (cost.length) line('g-cost', cost.join(' · '));
+
+    canvas.append(box);
+  }
+
+  host.append(canvas);
+}
+
+/** The Agents pane, in whichever layout is selected. */
+function renderAgentsView() {
+  const agents = (snap && snap.agents) || [];
+  const working = agents.filter((a) => a.status === 'working').length;
+  $('agentsHint').textContent = agents.length
+    ? `${agents.length} agent${agents.length === 1 ? '' : 's'} · ${working} working · click one for details`
+    : 'who is working, and on what';
+  document.querySelectorAll('.layout-btn').forEach((b) =>
+    b.classList.toggle('on', b.dataset.layout === agentLayout));
+  if (agentLayout === 'graph') renderAgentGraph();
+  else { $('agentList').className = 'agent-list'; renderAgents(); }
+}
+
+document.querySelectorAll('.layout-btn').forEach((b) =>
+  b.addEventListener('click', () => { agentLayout = b.dataset.layout; renderAgentsView(); }));
+
+/* ============================================================ feature tabs = */
+
+/**
+ * One tab per feature in flight.
+ *
+ * Several features are normally in development at once, each in its own
+ * worktree, and until now they all poured into a single stream: four sessions
+ * interleaved in one timeline reads as noise. Selecting a feature narrows every
+ * pane together - flow, agents, counters, stream - so "what is happening on
+ * checkout-v2" is one click instead of a filter held in someone's head.
+ */
+function renderFeatures() {
+  const host = $('features');
+  const features = (snap && snap.features) || [];
+  host.textContent = '';
+  // With nothing branched there is only one place work can happen, and a lone
+  // tab that cannot be switched away from is furniture.
+  host.hidden = !features.some((f) => f.id && f.id !== '(main)');
+  if (host.hidden) return;
+
+  const active = (snap && snap.activeFeature) ?? null;
+  const total = features.reduce((n, f) => n + f.events, 0);
+
+  const mk = (id, label, sub, events) => {
+    const b = document.createElement('button');
+    b.className = `ftab${active === id ? ' on' : ''}`;
+    if (sub) b.title = sub;
+    const name = document.createElement('span');
+    name.className = 'f-name';
+    name.textContent = label;
+    const count = document.createElement('span');
+    count.className = 'f-count';
+    count.textContent = String(events);
+    b.append(name, count);
+    b.addEventListener('click', async () => {
+      selectedSpan = null;
+      selectedAgent = null;
+      selectedWorkspace = id && id !== '(main)' ? id : null;
+      render(await window.ade.selectFeature(id));
+    });
+    return b;
+  };
+
+  host.append(mk(null, 'All features', 'every worktree at once', total));
+  for (const f of features) {
+    const label = f.id === '(main)' ? 'main' : f.id;
+    const tab = mk(f.id, label, f.objective || '', f.events);
+    if (f.uncommitted) {
+      const dot = document.createElement('span');
+      dot.className = 'f-dirty';
+      dot.title = `${f.uncommitted} uncommitted file(s)`;
+      tab.append(dot);
+    }
+    host.append(tab);
   }
 }

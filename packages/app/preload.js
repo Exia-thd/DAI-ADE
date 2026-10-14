@@ -14,6 +14,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('ade', {
   getSnapshot: () => ipcRenderer.invoke('ade:getSnapshot'),
   selectRun: (runId) => ipcRenderer.invoke('ade:selectRun', runId),
+  selectFeature: (feature) => ipcRenderer.invoke('ade:selectFeature', feature),
   openProject: () => ipcRenderer.invoke('ade:openProject'),
 
   // The workflow half.

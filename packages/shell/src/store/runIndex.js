@@ -199,6 +199,25 @@ class RunIndex {
         const activeTool = toolSpans.filter((sp) => sp.status === 'open').pop();
         const lastTool = activeTool || toolSpans[toolSpans.length - 1] || null;
 
+        // Tokens and model come from COST_UPDATE, which the harness emits and
+        // hooks cannot: a hook payload carries no usage. Both stay null when
+        // nothing reported them - a node showing a confident 0 tokens would be
+        // read as "this agent used none", which is not what the stream says.
+        let tokens = 0;
+        let contextTokens = null;
+        let model = entry.actor.model ?? null;
+        for (const event of events) {
+          if (event.type !== 'COST_UPDATE') continue;
+          const p = event.payload || {};
+          // Generated tokens accumulate; a context size does not - it is a
+          // measurement of one moment, so the newest reading replaces the last
+          // rather than being added to it.
+          tokens += Number(p.outputTokens) || 0;
+          if (Number.isFinite(Number(p.contextTokens))) contextTokens = Number(p.contextTokens);
+          if (p.model) model = p.model;
+        }
+
+        const elapsedMs = Date.parse(last.ts) - Date.parse(spans[0].openedAt ?? events[0].ts);
         const idleMs = newest ? newest - Date.parse(last.ts) : 0;
         // There is no session-end hook, so a session's root span is open
         // forever and "has an open span" can never mean "still working".
@@ -214,7 +233,11 @@ class RunIndex {
           kind: entry.actor.kind,
           id: entry.actor.id,
           tier: entry.actor.tier ?? null,
-          model: entry.actor.model ?? null,
+          model,
+          tokens: tokens || null,
+        contextTokens,
+          elapsedMs: Number.isFinite(elapsedMs) ? elapsedMs : null,
+          parentKey: parentAgentKey(run, spans, id),
           status,
           hadFailure,
           attributable: entry.actor.kind !== 'worker',
@@ -348,6 +371,26 @@ class RunIndex {
   list() {
     return [...this.runs.keys()].map((id) => this.summary(id)).sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)));
   }
+}
+
+/**
+ * Which agent spawned this one, as a key into the same list.
+ *
+ * A sub-agent's span hangs off a turn, and the turn belongs to the session, so
+ * the edge the map needs is one level further up than the span tree gives.
+ */
+function parentAgentKey(run, spans, runId) {
+  for (const span of spans) {
+    let parent = span.parent ? run.spans.get(span.parent) : null;
+    // Walk up past turns, which are the session acting, not a separate actor.
+    while (parent && parent.actor && parent.actor.kind === 'tool') {
+      parent = parent.parent ? run.spans.get(parent.parent) : null;
+    }
+    if (!parent || !parent.actor) continue;
+    const key = `${runId}/${parent.actor.kind}:${parent.actor.id}`;
+    if (key !== `${runId}/${span.actor.kind}:${span.actor.id}`) return key;
+  }
+  return null;
 }
 
 /** A one-line description of what a tool call is actually touching. */

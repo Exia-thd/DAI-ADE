@@ -241,3 +241,49 @@ code{font-family:var(--mono);background:var(--line2);padding:.05rem .25rem;borde
 .a-idle{font-size:.7rem;color:var(--faint);margin-top:.4rem;font-family:var(--mono)}
 
 .agent-detail{overflow:auto;padding:.6rem .7rem;flex:1;min-height:0}
+
+/* ---------------------------------------------------------- agent graph --- */
+.layout-toggle{margin-left:auto;display:flex;gap:2px;background:var(--line2);padding:2px;border-radius:5px}
+.layout-btn{font:inherit;font-size:.62rem;letter-spacing:.06em;text-transform:none;padding:.2rem .5rem;
+  border:0;border-radius:3px;background:transparent;color:var(--muted);cursor:pointer}
+.layout-btn.on{background:var(--paper);color:var(--ink);font-weight:650}
+
+.agent-graph{overflow:auto;padding:.8rem;flex:1;min-height:0}
+.graph-canvas{position:relative}
+.graph-edges{position:absolute;inset:0;pointer-events:none;overflow:visible}
+.graph-edges .edge{fill:none;stroke:var(--line);stroke-width:1.5}
+.graph-edges .edge.live{stroke:#7cc9a8;stroke-width:2}
+
+.gnode{position:absolute;width:268px;height:58px;box-sizing:border-box;
+  border:1px solid var(--line);border-radius:8px;background:var(--paper);
+  padding:.5rem .62rem;cursor:pointer;transition:border-color .15s, box-shadow .15s;
+  box-shadow:0 1px 2px rgba(10,37,64,.05)}
+.gnode:hover{border-color:var(--blue)}
+.gnode.sel{border-color:var(--blue);box-shadow:0 0 0 2px rgba(18,99,210,.15)}
+.gnode.working{border-color:#9ad2b4;background:linear-gradient(180deg,#f6fffb,var(--paper) 70%)}
+.gnode.working .a-dot{background:var(--green);animation:pulse 1.6s ease-in-out infinite}
+.g-head{display:flex;align-items:center;gap:.4rem}
+.g-name{font-family:var(--mono);font-weight:700;font-size:.8rem;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-sub{margin-top:.28rem;font-family:var(--mono);font-size:.66rem;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ------------------------------------------------------- feature tabs --- */
+.features{display:flex;gap:.3rem;padding:.4rem .8rem 0;align-items:center;flex-wrap:wrap}
+.features[hidden]{display:none}
+.ftab{display:flex;align-items:center;gap:.35rem;border:1px solid var(--line);
+  border-bottom-color:transparent;border-radius:7px 7px 0 0;background:var(--line2);
+  color:var(--muted);font:inherit;font-size:.74rem;padding:.3rem .6rem;cursor:pointer;
+  position:relative;top:1px;transition:.15s}
+.ftab:hover{color:var(--ink2);background:#e7eef8}
+.ftab.on{background:var(--paper);color:var(--blue);font-weight:700;
+  border-color:var(--line);box-shadow:0 -2px 0 var(--blue) inset}
+.f-name{font-family:var(--mono);max-width:17rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.f-count{font-family:var(--mono);font-size:.62rem;padding:.04rem .3rem;border-radius:999px;
+  background:var(--paper);border:1px solid var(--line);color:var(--faint)}
+.ftab.on .f-count{background:#e6f0fb;border-color:#cfe0f5;color:var(--blue)}
+.f-dirty{width:6px;height:6px;border-radius:50%;background:var(--amber,#b4690e)}
+
+.gnode .g-cost{font-family:var(--mono);font-size:.63rem;color:var(--faint);margin-top:.12rem;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gnode.working .g-cost{color:var(--green)}

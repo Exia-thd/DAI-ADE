@@ -68,14 +68,30 @@ ade work diff <id>       # review what it changed
 ade work rm <id>         # remove it    --force --delete-branch
 ```
 
-The window has three tabs. **Agents** is the map: a card per session and
-sub-agent, with its type, what it is working on, the tool it is running right
-now, and whether anything it tried was refused. Live agents pulse. **Observe**
-is the glass box: the flow timeline, the
-spawn roster, the inspector, the raw stream, and a bar across the top when a
-gate is waiting — with the button that approves it. **Workspaces** is the worktree
-half: every worktree with its objective and how far it has diverged,
-a diff for each, and create/remove.
+Across the top is a tab per **feature**: one for the main checkout and one for
+every worktree, plus *All features*. Selecting one narrows every pane together,
+so following one feature while three others run is a click rather than a filter
+held in your head. This is also why the window tails each worktree's own event
+directory: a session working on a feature runs *inside* that feature's checkout
+and writes its stream there, so watching only the repository root showed none of
+the work this tool exists for.
+
+Below that are three tabs.
+
+**Agents** is the map, drawn as a graph: each session on the left with the
+sub-agents it spawned fanned out to its right, connected by the spawn edge. A
+node carries the model, how long the agent has been going, the size of its
+context, how many tokens it has generated, and the tool it is running right now.
+Live agents pulse. (*Cards* switches to the denser list.) The token figures are
+read from the agent's own transcript — the one place they exist — and an agent
+nobody reported a cost for shows none rather than a zero.
+
+**Observe** is the glass box: the flow timeline, the spawn roster, the
+inspector, the raw stream, and a bar across the top when a gate is waiting —
+with the button that approves it.
+
+**Workspaces** is the worktree half: every worktree with its objective and how
+far it has diverged, a diff for each, and create/remove.
 
 Restart Claude Code in the watched project so the hooks take effect.
 

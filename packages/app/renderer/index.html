@@ -23,6 +23,8 @@
   <div id="live" class="live" title="tailer state"><i></i><span>idle</span></div>
 </header>
 
+<nav id="features" class="features" aria-label="Features in flight" hidden></nav>
+
 <section id="counters" aria-label="Run counters"></section>
 
 <div id="gatebar" class="gatebar" hidden>
@@ -57,7 +59,12 @@
 
 <main id="agents" hidden>
   <section class="pane" id="agentsPane">
-    <h2>Agent map <small id="agentsHint">who is working, and on what</small></h2>
+    <h2>Agent map <small id="agentsHint">who is working, and on what</small>
+      <span class="layout-toggle">
+        <button class="layout-btn on" data-layout="graph">Graph</button>
+        <button class="layout-btn" data-layout="cards">Cards</button>
+      </span>
+    </h2>
     <div id="agentList" class="agent-list"></div>
   </section>
 

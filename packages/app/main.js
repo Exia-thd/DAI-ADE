@@ -15,6 +15,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { EventEmitter } = require('events');
 
 const { RunDirectoryTailer } = require('../shell/src/ingest/tailer.js');
 const { RunIndex } = require('../shell/src/store/runIndex.js');
@@ -56,8 +57,10 @@ function watchProject(dir) {
   selected = null;
   savePrefs({ lastProject: dir });
 
-  const dirPath = eventsDir(dir);
-  tailer = new RunDirectoryTailer(dirPath, { intervalMs: 150, scanIntervalMs: 800 });
+  // The project itself, plus every worktree: an agent working on a feature runs
+  // inside that feature's checkout and writes its events there, so watching
+  // only the root made exactly the sessions this tool is for invisible.
+  tailer = new MultiDirectoryTailer(watchedDirs(dir), { intervalMs: 150, scanIntervalMs: 800 });
   tailer.on('event', (event) => {
     if (!index.add(event)) return;         // dedupe across ingestion paths
     // Deliberately does not pick a run: snapshot() decides, and with more than
@@ -66,7 +69,6 @@ function watchProject(dir) {
     dirty = true;
   });
   tailer.on('invalid', (d) => { send('ade:invalid', d); });
-  tailer.start();
   syncHarness();
   dirty = true;
 }
@@ -79,6 +81,54 @@ function watchProject(dir) {
  * black-box supervisor can produce was missing from the only place anyone
  * looks. Cheap to repeat - event ids are derived, so a re-read writes nothing.
  */
+/** Every event directory worth watching for this project. */
+function watchedDirs(dir) {
+  const dirs = [eventsDir(dir)];
+  try {
+    for (const entry of worktrees.list(dir)) {
+      if (entry.managed) dirs.push(eventsDir(entry.path));
+    }
+  } catch { /* not a git repository */ }
+  return dirs;
+}
+
+/**
+ * Several directories, one stream. New worktrees appear while the window is
+ * open, so the set is re-checked rather than fixed at startup.
+ */
+class MultiDirectoryTailer extends EventEmitter {
+  constructor(dirs, options) {
+    super();
+    this.options = options;
+    this.tailers = new Map();
+    this.adopt(dirs);
+  }
+
+  adopt(dirs) {
+    for (const dir of dirs) {
+      if (this.tailers.has(dir)) continue;
+      const tailer = new RunDirectoryTailer(dir, this.options);
+      tailer.on('event', (e) => this.emit('event', e));
+      tailer.on('invalid', (d) => this.emit('invalid', d));
+      this.tailers.set(dir, tailer.start());
+    }
+  }
+
+  stop() {
+    for (const tailer of this.tailers.values()) tailer.stop();
+    this.tailers.clear();
+  }
+
+  get stats() {
+    const total = { lines: 0, events: 0, invalid: 0, torn: 0, restarts: 0, files: 0 };
+    for (const tailer of this.tailers.values()) {
+      const s = tailer.stats;
+      for (const key of Object.keys(total)) total[key] += s[key] || 0;
+    }
+    return total;
+  }
+}
+
 function syncHarness() {
   if (!project) return;
   try {
@@ -92,8 +142,64 @@ setInterval(syncHarness, 5000);
 
 /* ---------------------------------------------------------- snapshot ----- */
 
+const MAIN_FEATURE = '(main)';
+let activeFeature = null;
+
+/**
+ * Which feature a run belongs to, from the working directory its events were
+ * produced in. Correlating on the path is exact: the emitter records the cwd
+ * the hook fired in, and a worktree is a directory.
+ */
+function featureOf(run) {
+  for (const event of run.events) {
+    const cwd = event.payload && event.payload.cwd;
+    if (!cwd) continue;
+    const resolved = path.resolve(cwd);
+    for (const workspace of listWorkspaces()) {
+      if (workspace.managed && resolved.startsWith(workspace.path)) return workspace.taskId;
+    }
+  }
+  return null;
+}
+
+/** The features currently in flight, with how much is happening in each. */
+function featureList() {
+  const counts = new Map();
+  for (const run of index.runs.values()) {
+    const feature = featureOf(run);
+    const key = feature ?? MAIN_FEATURE;
+    counts.set(key, (counts.get(key) || 0) + run.events.length);
+  }
+  const out = [];
+  for (const workspace of listWorkspaces()) {
+    if (!workspace.managed) continue;
+    out.push({
+      id: workspace.taskId,
+      objective: workspace.contract ? workspace.contract.objective : null,
+      events: counts.get(workspace.taskId) || 0,
+      uncommitted: workspace.status ? workspace.status.uncommitted.length : 0,
+      ahead: workspace.status ? workspace.status.ahead : 0,
+    });
+  }
+  // The main checkout is a feature tab like any other: work happens there too,
+  // and without it switching to a feature would hide that work with no way back
+  // to it other than 'everything at once'.
+  if (counts.has(MAIN_FEATURE)) {
+    out.unshift({ id: MAIN_FEATURE, objective: 'the main checkout', events: counts.get(MAIN_FEATURE) });
+  }
+  return out;
+}
+
 function snapshot() {
-  const runs = index.list();
+  const features = featureList();
+  // Filtering happens on the run list, so every pane - timeline, agents,
+  // counters, stream - narrows together. A feature tab that only filtered one
+  // pane would be worse than none.
+  const runIds = new Set();
+  for (const [id, run] of index.runs) {
+    if (activeFeature === null || (featureOf(run) ?? MAIN_FEATURE) === activeFeature) runIds.add(id);
+  }
+  const runs = index.list().filter((r) => runIds.has(r.id));
   // '*' is every run at once. It is the default with more than one, because
   // several features in flight is the normal case and the first question is
   // always "what is running", not "what happened in this one session".
@@ -108,7 +214,8 @@ function snapshot() {
   // events and the renderer never draws more than a screenful; shipping all of
   // them would make the UI slower the longer you watched, which is backwards.
   const allEvents = combined
-    ? [...index.runs.values()].flatMap((r) => r.events).sort((a, b) => a.ts.localeCompare(b.ts))
+    ? [...index.runs.entries()].filter(([id]) => runIds.has(id))
+        .flatMap(([, r]) => r.events).sort((a, b) => a.ts.localeCompare(b.ts))
     : (run ? run.events : []);
   const events = allEvents.slice(-MAX_EVENTS_TO_RENDERER);
 
@@ -118,8 +225,13 @@ function snapshot() {
     eventsDir: project ? eventsDir(project) : null,
     runs,
     selected: runId,
-    agents: index.agents(combined ? '*' : runId),
-    tree: combined ? index.treeAll() : (runId ? index.tree(runId) : []),
+    agents: (combined ? index.agents('*') : index.agents(runId))
+      .filter((a) => runIds.has(a.runId)),
+    tree: combined
+      ? index.treeAll().filter((n) => runIds.has(n.id))
+      : (runId ? index.tree(runId) : []),
+    features,
+    activeFeature,
     summary: combined ? index.summaryAll() : (runId ? index.summary(runId) : null),
     events,
     truncated: Math.max(0, allEvents.length - events.length),
@@ -139,6 +251,7 @@ function listWorkspaces(force = false) {
   if (!force && now - workspaceCache.at < 2000) return workspaceCache.value;
   let value = [];
   try {
+    if (tailer) tailer.adopt(watchedDirs(project));
     value = worktrees.list(project).map((entry) => {
       if (!entry.managed) return entry;
       try { return { ...entry, status: worktrees.status(project, entry.taskId) }; }
@@ -238,7 +351,7 @@ async function captureTabs() {
     );
     if (tab === 'agents') {
       await win.webContents.executeJavaScript(
-        "(() => { const c = document.querySelector('.agent'); if (c) c.click(); return true; })();",
+        "(() => { const c = document.querySelector('.gnode, .agent'); if (c) c.click(); return true; })();",
       );
     }
     if (tab === 'workspaces') {
@@ -249,20 +362,45 @@ async function captureTabs() {
       );
     }
     await wait(1200);
-    win.webContents.invalidate();
-    await wait(400);
-    const image = await win.webContents.capturePage();
-    const file = path.join(SHOT_DIR, `dai-ade-${tab}.png`);
-    fs.writeFileSync(file, image.toPNG());
-    const size = image.getSize();
-    console.log(`${file}  ${size.width}x${size.height}`);
+    await shoot(tab);
   }
+
+  // One feature, selected. The other three tabs show everything at once, which
+  // is the wrong picture for "how do I follow one feature while three others
+  // run": that question is answered by the strip narrowing every pane together,
+  // and only a shot of it selected shows that.
+  await win.webContents.executeJavaScript(`(() => {
+    document.querySelector('.tab[data-view="observe"]').click();
+    const tabs = [...document.querySelectorAll('.ftab')];
+    const pick = tabs.find((t) => t.textContent.includes('retry-budget')) || tabs[1];
+    if (pick) pick.click();
+    return Boolean(pick);
+  })();`);
+  await wait(1400);
+  await shoot('feature');
+
   app.exit(0);
+}
+
+async function shoot(name) {
+  win.webContents.invalidate();
+  await wait(400);
+  const image = await win.webContents.capturePage();
+  const file = path.join(SHOT_DIR, `dai-ade-${name}.png`);
+  fs.writeFileSync(file, image.toPNG());
+  const size = image.getSize();
+  console.log(`${file}  ${size.width}x${size.height}`);
 }
 
 /* ----------------------------------------------------------------- ipc --- */
 
 ipcMain.handle('ade:getSnapshot', () => snapshot());
+
+ipcMain.handle('ade:selectFeature', (_e, feature) => {
+  activeFeature = feature ?? null;
+  selected = null;   // the run selection belongs to the feature that was open
+  return snapshot();
+});
 
 ipcMain.handle('ade:selectRun', (_e, runId) => {
   selected = runId;
@@ -349,7 +487,9 @@ ipcMain.handle('ade:openProject', async () => {
 });
 
 app.whenReady().then(() => {
-  const last = loadPrefs().lastProject;
+  // ADE_PROJECT exists for the screenshot pass and for a second window on a
+  // different repository; otherwise the last project is the one you meant.
+  const last = process.env.ADE_PROJECT || loadPrefs().lastProject;
   if (last && fs.existsSync(last)) watchProject(last);
   createWindow();
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });

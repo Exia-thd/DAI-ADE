@@ -26,6 +26,7 @@
 const fs = require('fs');
 const path = require('path');
 const { makeEvent, shortHash, newId } = require('../../shared/src/events.js');
+const { readUsage } = require('./transcript.js');
 
 const ROOT_SPAN = 'sp_root';
 
@@ -202,6 +203,50 @@ function takeTurnSpan(cwd, runId) {
   return span;
 }
 
+/**
+ * Everything one hook invocation has to say.
+ *
+ * A hook carries no token counts, but it does carry the path to the transcript
+ * that has them, and a unit of work ending is exactly when its cost is known.
+ * So a closing hook contributes a second event read from that file. Keeping it
+ * separate from `build` means the taxonomy event is never held up by an
+ * unreadable transcript.
+ */
+function buildAll(payload) {
+  const primary = build(payload);
+  if (!primary) return [];
+  const cost = buildCost(payload, primary);
+  return cost ? [primary, cost] : [primary];
+}
+
+/** The transcript's own numbers, attributed to the actor that just finished. */
+function buildCost(payload, primary) {
+  // Only on a close: an opening hook has nothing to report yet, and emitting
+  // per tool call would write the same cumulative figure dozens of times.
+  if (primary.type !== 'TURN_ENDED' && primary.type !== 'WORKER_DELIVERED') return null;
+  const file = payload.transcript_path || payload.transcriptPath;
+  if (!file) return null;
+
+  let usage;
+  try { usage = readUsage(String(file)); } catch { return null; }
+  if (!usage) return null;
+
+  return makeEvent({
+    type: 'COST_UPDATE',
+    run_id: primary.run_id,
+    span_id: primary.span_id,
+    parent_span_id: primary.parent_span_id,
+    actor: primary.actor,
+    payload: {
+      source: 'transcript',
+      model: usage.model ?? undefined,
+      outputTokens: usage.outputTokens,
+      contextTokens: usage.contextTokens ?? undefined,
+      messages: usage.messages,
+    },
+  });
+}
+
 function append(event, cwd) {
   const dir = eventsDir(cwd);
   fs.mkdirSync(dir, { recursive: true });
@@ -213,18 +258,19 @@ function append(event, cwd) {
 
 function main() {
   const payload = readStdin();
-  let event;
+  let events;
   try {
-    event = build(payload);
+    events = buildAll(payload);
   } catch {
     return; // a malformed payload must never break the turn
   }
-  if (!event) return;
-  try {
-    append(event, payload.cwd);
-  } catch {
-    // Disk full, permissions, a race on mkdir — none of these are worth
-    // failing an agent turn over.
+  for (const event of events) {
+    try {
+      append(event, payload.cwd);
+    } catch {
+      // Disk full, permissions, a race on mkdir — none of these are worth
+      // failing an agent turn over.
+    }
   }
 }
 
@@ -233,4 +279,4 @@ if (require.main === module) {
   process.exit(0);
 }
 
-module.exports = { build, classify, toolSpanId, stableStringify, summarise, eventsDir, turnPointer, HOOK_MAP };
+module.exports = { build, buildAll, buildCost, classify, toolSpanId, stableStringify, summarise, eventsDir, turnPointer, HOOK_MAP };
