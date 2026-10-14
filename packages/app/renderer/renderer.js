@@ -117,7 +117,7 @@ function renderFlow() {
   const horizon = isLive ? Date.now() : last;
 
   const starts = rows.map((r) => Date.parse(r.openedAt ?? snap.summary.startedAt)).filter(Number.isFinite);
-  const ends = rows.map((r) => (r.closedAt ? Date.parse(r.closedAt) : horizon)).filter(Number.isFinite);
+  const ends = rows.map((r) => Date.parse(r.closedAt || r.lastEventAt || new Date(horizon).toISOString())).filter(Number.isFinite);
   const t0 = Math.min(...starts, Date.parse(snap.summary.startedAt));
   const t1 = Math.max(...ends, t0 + 1);
   const span = Math.max(1, t1 - t0);
@@ -134,7 +134,12 @@ function renderFlow() {
 
   for (const r of rows) {
     const s = Date.parse(r.openedAt ?? new Date(t0).toISOString());
-    const e = r.closedAt ? Date.parse(r.closedAt) : now;
+    // An unclosed span ends where its own activity ended, unless the run is
+    // genuinely live - then it grows to the horizon. There is no session-end
+    // hook, so without this every run is drawn as still open and stretches the
+    // axis to the present, squashing every real span into a sliver.
+    const fallback = !isLive && r.lastEventAt ? Date.parse(r.lastEventAt) : now;
+    const e = r.closedAt ? Date.parse(r.closedAt) : fallback;
     const kind = r.actor.kind === 'root' && r.type === 'TURN_STARTED' ? 'turn' : r.actor.kind;
     const title = `${r.actor.kind}:${r.actor.id} · ${r.type || ''} · ${fmtDur(r.durationMs)}`;
 
@@ -304,9 +309,26 @@ function renderChrome() {
   $('project').textContent = snap.project || 'no project';
   $('project').title = snap.eventsDir || '';
   const sel = $('runSelect');
-  sel.innerHTML = snap.runs.map((r) =>
-    `<option value="${esc(r.id)}" ${r.id === snap.selected ? 'selected' : ''}>${esc(r.id)} · ${r.events}</option>`).join('')
-    || '<option>no runs</option>';
+  sel.textContent = '';
+  if (snap.runs.length > 1) {
+    const all = document.createElement('option');
+    all.value = '*';
+    all.textContent = `All runs (${snap.runs.length}) · ${snap.runs.reduce((n, r) => n + r.events, 0)}`;
+    all.selected = snap.selected === '*';
+    sel.append(all);
+  }
+  for (const r of snap.runs) {
+    const o = document.createElement('option');
+    o.value = r.id;
+    o.textContent = `${r.id} · ${r.events}`;
+    o.selected = r.id === snap.selected;
+    sel.append(o);
+  }
+  if (!snap.runs.length) {
+    const o = document.createElement('option');
+    o.textContent = 'no runs';
+    sel.append(o);
+  }
 
   const live = $('live');
   const files = snap.stats?.files ?? 0;
@@ -321,8 +343,22 @@ function select(spanId) {
   renderFlow(); renderRoster(); renderInspector();
 }
 
+/**
+ * With nothing selected the Inspector is a dead panel on every load. Opening on
+ * the first failure instead means the pane answers the question people actually
+ * arrive with - what went wrong - and falls back to the first span when nothing
+ * did.
+ */
+function defaultSelection() {
+  if (selectedSpan || !snap || !snap.tree.length) return;
+  const flat = lanes(snap.tree);
+  const failed = flat.find((n) => n.status === 'failed');
+  selectedSpan = (failed || flat[0]).id;
+}
+
 function render(next) {
   snap = next;
+  defaultSelection();
   renderChrome();
   renderGate();
   if (view === 'workspaces') renderWorkspaces();

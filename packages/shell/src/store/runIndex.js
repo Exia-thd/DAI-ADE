@@ -161,6 +161,11 @@ class RunIndex {
           openedAt: span.openedAt,
           closedAt: span.closedAt,
           durationMs: span.openedAt && span.closedAt ? Date.parse(span.closedAt) - Date.parse(span.openedAt) : null,
+          // When a span never closes, this is the last thing that happened in
+          // it. There is no session-end hook, so every run would otherwise be
+          // drawn as still open and stretch the timeline to the present,
+          // squashing every real span into a sliver.
+          lastEventAt: span.events.length ? span.events[span.events.length - 1].ts : null,
           instantaneous: !!span.instantaneous,
           eventCount: span.events.length,
           children: build(span.id),
@@ -182,6 +187,58 @@ class RunIndex {
       spans: run.spans.size,
       openSpans: open,
       ...run.counters,
+    };
+  }
+
+  /**
+   * Every run at once, as one tree.
+   *
+   * Parallel work is the normal case: four features in flight is four agent
+   * sessions, and a window that shows one at a time cannot answer "what is
+   * running right now" — the question an ADE exists to answer. Each run becomes
+   * a top-level lane; spans keep their own parentage underneath.
+   */
+  treeAll() {
+    const out = [];
+    for (const runId of this.runs.keys()) {
+      const children = this.tree(runId);
+      if (!children.length) continue;
+      const opened = children.map((c) => c.openedAt).filter(Boolean).sort()[0] ?? null;
+      const closedTimes = children.map((c) => c.closedAt);
+      const closed = closedTimes.every(Boolean) ? closedTimes.sort().slice(-1)[0] : null;
+      out.push({
+        id: runId,
+        actor: { kind: 'root', id: runId },
+        type: 'RUN_STARTED',
+        status: closed ? 'closed' : 'open',
+        openedAt: opened,
+        closedAt: closed,
+        durationMs: opened && closed ? Date.parse(closed) - Date.parse(opened) : null,
+        instantaneous: false,
+        eventCount: this.runs.get(runId).events.length,
+        lastEventAt: this.runs.get(runId).endedAt,
+        children,
+      });
+    }
+    return out.sort((a, b) => String(a.openedAt ?? '').localeCompare(String(b.openedAt ?? '')));
+  }
+
+  /** The counters of every run added together. */
+  summaryAll() {
+    const all = this.list();
+    if (!all.length) return null;
+    const sum = (key) => all.reduce((n, r) => n + (r[key] || 0), 0);
+    const starts = all.map((r) => r.startedAt).filter(Boolean).sort();
+    const ends = all.map((r) => r.endedAt).filter(Boolean).sort();
+    return {
+      id: '*',
+      startedAt: starts[0] ?? null,
+      endedAt: ends[ends.length - 1] ?? null,
+      durationMs: starts.length && ends.length ? Date.parse(ends[ends.length - 1]) - Date.parse(starts[0]) : 0,
+      events: sum('events'), spans: sum('spans'), openSpans: sum('openSpans'),
+      tools: sum('tools'), blocked: sum('blocked'), failed: sum('failed'),
+      workers: sum('workers'), evidence: sum('evidence'), cost: sum('cost'),
+      runs: all.length,
     };
   }
 

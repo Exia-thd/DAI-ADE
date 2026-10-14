@@ -26,6 +26,7 @@ const { makeEvent } = require('../shared/src/events.js');
 
 const PREFS = path.join(app.getPath('userData'), 'prefs.json');
 const MAX_EVENTS_TO_RENDERER = 400;
+const ALL_RUNS = '*';
 
 let win = null;
 let tailer = null;
@@ -59,7 +60,9 @@ function watchProject(dir) {
   tailer = new RunDirectoryTailer(dirPath, { intervalMs: 150, scanIntervalMs: 800 });
   tailer.on('event', (event) => {
     if (!index.add(event)) return;         // dedupe across ingestion paths
-    if (!selected) selected = event.run_id; // first run seen becomes the view
+    // Deliberately does not pick a run: snapshot() decides, and with more than
+    // one it shows them all. Latching onto whichever run happened to emit first
+    // hid the other three sessions behind a dropdown.
     dirty = true;
   });
   tailer.on('invalid', (d) => { send('ade:invalid', d); });
@@ -91,14 +94,23 @@ setInterval(syncHarness, 5000);
 
 function snapshot() {
   const runs = index.list();
-  const runId = selected && runs.some((r) => r.id === selected) ? selected : runs[0]?.id ?? null;
+  // '*' is every run at once. It is the default with more than one, because
+  // several features in flight is the normal case and the first question is
+  // always "what is running", not "what happened in this one session".
+  const combined = selected === ALL_RUNS || (selected === null && runs.length > 1);
+  const runId = combined
+    ? ALL_RUNS
+    : (selected && runs.some((r) => r.id === selected) ? selected : runs[0]?.id ?? null);
   selected = runId;
 
-  const run = runId ? index.runs.get(runId) : null;
+  const run = combined ? null : (runId ? index.runs.get(runId) : null);
   // Only the tail of the stream crosses IPC. A long run holds thousands of
   // events and the renderer never draws more than a screenful; shipping all of
   // them would make the UI slower the longer you watched, which is backwards.
-  const events = run ? run.events.slice(-MAX_EVENTS_TO_RENDERER) : [];
+  const allEvents = combined
+    ? [...index.runs.values()].flatMap((r) => r.events).sort((a, b) => a.ts.localeCompare(b.ts))
+    : (run ? run.events : []);
+  const events = allEvents.slice(-MAX_EVENTS_TO_RENDERER);
 
   return {
     project,
@@ -106,10 +118,10 @@ function snapshot() {
     eventsDir: project ? eventsDir(project) : null,
     runs,
     selected: runId,
-    tree: runId ? index.tree(runId) : [],
-    summary: runId ? index.summary(runId) : null,
+    tree: combined ? index.treeAll() : (runId ? index.tree(runId) : []),
+    summary: combined ? index.summaryAll() : (runId ? index.summary(runId) : null),
     events,
-    truncated: run ? Math.max(0, run.events.length - events.length) : 0,
+    truncated: Math.max(0, allEvents.length - events.length),
     stats: tailer ? tailer.stats : null,
   };
 }
@@ -151,24 +163,88 @@ setInterval(() => {
 
 /* -------------------------------------------------------------- window --- */
 
+/**
+ * Screenshot mode: ADE_SHOT=<dir> renders at an exact size, captures each tab
+ * and exits. The window is the real one with the real wiring, so the image
+ * cannot drift from the product the way a mock-up silently does.
+ */
+const SHOT_DIR = process.env.ADE_SHOT || null;
+const SHOT_OUT = (process.env.ADE_SHOT_SIZE || '1920x1080').split('x').map(Number);
+// An on-screen window is clamped to the display work area: asking for
+// 1920x1080 produced 1904x993, close enough to look right and wrong enough to
+// be the wrong aspect ratio. Offscreen rendering is not bound by the display,
+// so the frame really is the size asked for and nothing is upscaled.
+const SHOT_RENDER = SHOT_OUT;
+
 function createWindow() {
   win = new BrowserWindow({
-    width: 1340,
-    height: 860,
+    width: SHOT_DIR ? SHOT_RENDER[0] : 1340,
+    height: SHOT_DIR ? SHOT_RENDER[1] : 860,
     minWidth: 900,
     minHeight: 600,
     backgroundColor: '#eef5fd',
     title: 'DAI ADE',
+    show: !SHOT_DIR,
+    useContentSize: true,
+    // The frame ate 48px of the requested height (1920x1032 instead of 1080).
+    // Capturing frameless makes the content area exactly the size asked for.
+    frame: !SHOT_DIR,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      offscreen: Boolean(SHOT_DIR),
     },
   });
   win.removeMenu();
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  win.webContents.on('did-finish-load', () => send('ade:snapshot', snapshot()));
+  win.webContents.on('did-finish-load', () => {
+    send('ade:snapshot', snapshot());
+    if (SHOT_DIR) captureTabs().catch((err) => { console.error(err); app.exit(1); });
+  });
+}
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function captureTabs() {
+  fs.mkdirSync(SHOT_DIR, { recursive: true });
+  // The renderer coalesces snapshots every 250ms and the flow timeline animates
+  // open spans once a second; give it long enough to settle or the capture
+  // catches a half-drawn frame.
+  // Offscreen rendering paints on demand; without a frame rate it can sit idle
+  // and capture an empty surface.
+  win.webContents.setFrameRate(30);
+  // The initial size is clamped to the display work area even offscreen, so it
+  // is re-applied here after the window exists; setContentSize is not subject
+  // to that clamp.
+  win.setContentSize(SHOT_RENDER[0], SHOT_RENDER[1]);
+  await wait(600);
+  const actual = win.getContentSize();
+  console.log(`content size: ${actual[0]}x${actual[1]}`);
+  await wait(2500);
+
+  for (const tab of ['observe', 'workspaces']) {
+    await win.webContents.executeJavaScript(
+      `document.querySelector('.tab[data-view="${tab}"]').click(); true;`,
+    );
+    if (tab === 'workspaces') {
+      // Select the first worktree so the diff pane has something in it.
+      await win.webContents.executeJavaScript(
+        `(() => { const c = document.querySelector('.ws:not(.main)');
+           if (c) c.click(); return true; })();`,
+      );
+    }
+    await wait(1200);
+    win.webContents.invalidate();
+    await wait(400);
+    const image = await win.webContents.capturePage();
+    const file = path.join(SHOT_DIR, `dai-ade-${tab}.png`);
+    fs.writeFileSync(file, image.toPNG());
+    const size = image.getSize();
+    console.log(`${file}  ${size.width}x${size.height}`);
+  }
+  app.exit(0);
 }
 
 /* ----------------------------------------------------------------- ipc --- */
