@@ -17,6 +17,7 @@
     <button class="tab on" data-view="observe" role="tab">Observe</button>
     <button class="tab" data-view="agents" role="tab">Agents</button>
     <button class="tab" data-view="workspaces" role="tab">Workspaces</button>
+    <button class="tab" data-view="mcp" role="tab">MCP</button>
   </div>
   <div class="spacer"></div>
   <select id="runSelect" class="select" aria-label="Run"></select>
@@ -89,6 +90,28 @@
   <section class="pane" id="wsDiffPane">
     <h2>Diff <small id="wsDiffHint">select a worktree</small></h2>
     <div id="wsDiff" class="diff"></div>
+  </section>
+</main>
+
+<main id="mcp" hidden>
+  <section class="pane" id="mcpPane">
+    <h2>MCP servers <small id="mcpHint">what the agents can reach</small>
+      <span class="layout-toggle">
+        <button id="mcpCheckAll" class="layout-btn">Check all</button>
+      </span>
+    </h2>
+    <div id="mcpList" class="mcp-list"></div>
+    <div class="mcp-add">
+      <input id="mcpName" class="input" placeholder="name" spellcheck="false" autocomplete="off">
+      <input id="mcpCommand" class="input grow" placeholder="command and arguments, or an https:// URL"
+             spellcheck="false" autocomplete="off">
+      <button id="mcpAdd" class="btn btn-go">Add</button>
+    </div>
+  </section>
+
+  <section class="pane" id="mcpToolsPane">
+    <h2>Tools <small id="mcpToolsHint">select a server</small></h2>
+    <div id="mcpTools" class="mcp-tools"></div>
   </section>
 </main>
 

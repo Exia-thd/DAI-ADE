@@ -368,6 +368,7 @@ function render(next) {
   renderGate();
   if (view === 'workspaces') renderWorkspaces();
   if (view === 'agents') { renderAgentsView(); renderAgentDetail(); }
+  if (view === 'mcp') { renderMcp(); renderMcpTools(); }
   renderCounters();
   renderFlow();
   renderRoster();
@@ -405,10 +406,12 @@ function setView(next) {
   $('grid').hidden = next !== 'observe';
   $('agents').hidden = next !== 'agents';
   $('workspaces').hidden = next !== 'workspaces';
+  $('mcp').hidden = next !== 'mcp';
   $('counters').hidden = next !== 'observe';
   renderGate();
   if (next === 'workspaces') renderWorkspaces();
   if (next === 'agents') { renderAgentsView(); renderAgentDetail(); }
+  if (next === 'mcp') { renderMcp(); renderMcpTools(); }
 }
 
 document.querySelectorAll('.tab').forEach((t) =>
@@ -1375,4 +1378,209 @@ $('chatInput').addEventListener('input', () => {
   if (open !== cmdOpen) cmdOpen = open;
   if (cmdOpen) renderCommandMenu((snap && snap.chat) || {});
   else $('cmdMenu').hidden = true;
+});
+
+/* ==================================================================== mcp = */
+
+/**
+ * The MCP panel.
+ *
+ * Two questions, and they are different. "What is configured" comes from the
+ * files; "does it work" only comes from connecting, so a dot here is grey until
+ * something actually handshook with the server. A green light derived from a
+ * line existing in a JSON file would answer nothing.
+ *
+ * The checkboxes are the other half: they decide what the agent launched from
+ * the dock may reach. Enforced by handing that agent a config written for the
+ * occasion, never by editing the project's .mcp.json or anyone's settings.
+ */
+let selectedServer = null;
+
+function renderMcp() {
+  const host = $('mcpList');
+  const servers = (snap && snap.mcp) || [];
+  const chat = (snap && snap.chat) || {};
+  const selection = chat.mcpSelection;
+  host.textContent = '';
+
+  // Three states, not two. "1/3 answered" hid the difference between a server
+  // that refused and one nothing has asked yet, which is the distinction this
+  // panel exists to make.
+  const answered = servers.filter((s) => s.check && s.check.ok === true).length;
+  const failed = servers.filter((s) => s.check && s.check.ok === false).length;
+  const unchecked = servers.length - answered - failed;
+  const parts = [`${servers.length} declared`];
+  if (answered) parts.push(`${answered} answered`);
+  if (failed) parts.push(`${failed} failed`);
+  if (unchecked) parts.push(`${unchecked} not checked`);
+  $('mcpHint').textContent = servers.length ? parts.join(' · ') : 'what the agents can reach';
+
+  if (!servers.length) {
+    const empty = document.createElement('p');
+    empty.className = 'dim';
+    empty.textContent = snap && snap.project
+      ? 'no MCP servers declared for this project'
+      : 'open a project first';
+    host.append(empty);
+    return;
+  }
+
+  for (const server of servers) {
+    const row = document.createElement('div');
+    const state = server.check ? (server.check.ok === true ? 'ok' : (server.check.ok === false ? 'bad' : '')) : '';
+    row.className = `mcp ${state}${server.name === selectedServer ? ' sel' : ''}`;
+    row.addEventListener('click', () => { selectedServer = server.name; renderMcp(); renderMcpTools(); });
+
+    const head = document.createElement('div');
+    head.className = 'mcp-head';
+
+    const dot = document.createElement('span');
+    dot.className = 'mcp-dot';
+    const name = document.createElement('span');
+    name.className = 'mcp-name';
+    name.textContent = server.name;
+    head.append(dot, name, tag('', server.transport), tag('', server.scope));
+
+    if (server.check && server.check.ok === true) {
+      head.append(tag('clean', `${server.check.tools.length} tool${server.check.tools.length === 1 ? '' : 's'}`));
+    }
+
+    const acts = document.createElement('div');
+    acts.className = 'mcp-acts';
+
+    // Which servers the next agent gets. Unticked everything means "no MCP at
+    // all" and is a real choice, so the absence of a selection is null rather
+    // than an empty list.
+    const pick = document.createElement('label');
+    pick.className = 'mcp-pick';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = selection === null || selection === undefined ? true : selection.includes(server.name);
+    box.disabled = !chat.mcpSupported;
+    box.addEventListener('click', (e) => e.stopPropagation());
+    box.addEventListener('change', async () => {
+      const current = Array.isArray(selection) ? [...selection] : servers.map((s) => s.name);
+      const next = box.checked
+        ? [...new Set([...current, server.name])]
+        : current.filter((n) => n !== server.name);
+      render(await window.ade.mcpSelect((snap && snap.activeFeature) ?? null, next));
+    });
+    pick.append(box, document.createTextNode('give'));
+
+    const check = document.createElement('button');
+    check.className = 'btn';
+    check.textContent = 'Check';
+    check.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      check.textContent = '…';
+      render(await window.ade.mcpCheck(server.name) && await window.ade.getSnapshot());
+    });
+
+    acts.append(pick, check);
+    if (server.scope === 'project') {
+      const remove = document.createElement('button');
+      remove.className = 'btn';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const result = await window.ade.mcpRemove(server.name);
+        if (!result.ok) $('mcpHint').textContent = result.error;
+        render(await window.ade.getSnapshot());
+      });
+      acts.append(remove);
+    }
+    head.append(acts);
+    row.append(head);
+
+    const cmd = document.createElement('div');
+    cmd.className = 'mcp-cmd';
+    cmd.textContent = server.url || [server.command, ...(server.args || [])].join(' ');
+    cmd.title = `${cmd.textContent}\n${server.source}`;
+    row.append(cmd);
+
+    if (server.check && server.check.ok !== true && server.check.reason) {
+      const why = document.createElement('div');
+      why.className = 'mcp-why';
+      // Unchecked is not the same as broken, and the colour says which.
+      why.style.color = server.check.ok === null ? 'var(--faint)' : 'var(--red)';
+      why.textContent = server.check.reason;
+      why.title = server.check.reason;
+      row.append(why);
+    }
+
+    host.append(row);
+  }
+
+  if (!chat.mcpSupported) {
+    const note = document.createElement('div');
+    note.className = 'mcp-note';
+    note.textContent = 'The selected agent cannot be told which MCP servers to use, so these boxes do nothing for it.';
+    host.append(note);
+  }
+}
+
+function renderMcpTools() {
+  const host = $('mcpTools');
+  const servers = (snap && snap.mcp) || [];
+  const server = servers.find((s) => s.name === selectedServer);
+  host.textContent = '';
+
+  if (!server) {
+    $('mcpToolsHint').textContent = 'select a server';
+    const p = document.createElement('p');
+    p.className = 'dim';
+    p.textContent = 'select a server to see what it offers';
+    host.append(p);
+    return;
+  }
+
+  $('mcpToolsHint').textContent = server.name;
+
+  if (!server.check) {
+    const p = document.createElement('p');
+    p.className = 'dim';
+    p.textContent = 'not checked yet — Check asks the server itself what it offers';
+    host.append(p);
+    return;
+  }
+  if (server.check.ok !== true) {
+    const p = document.createElement('p');
+    p.className = 'dim';
+    p.textContent = server.check.reason || 'the server did not answer';
+    host.append(p);
+    return;
+  }
+
+  for (const tool of server.check.tools) {
+    const row = document.createElement('div');
+    row.className = 'mcp-tool';
+    const name = document.createElement('b');
+    // The name the agent will actually see.
+    name.textContent = `mcp__${server.name}__${tool.name}`;
+    const description = document.createElement('span');
+    description.textContent = tool.description || '';
+    row.append(name, description);
+    host.append(row);
+  }
+}
+
+$('mcpCheckAll').addEventListener('click', async () => {
+  $('mcpHint').textContent = 'checking…';
+  await window.ade.mcpCheck(null);
+  render(await window.ade.getSnapshot());
+});
+
+$('mcpAdd').addEventListener('click', async () => {
+  const name = $('mcpName').value.trim();
+  const text = $('mcpCommand').value.trim();
+  if (!name || !text) return;
+  const isUrl = /^https?:\/\//i.test(text);
+  const [command, ...args] = text.split(/\s+/);
+  const result = await window.ade.mcpAdd(isUrl
+    ? { name, url: text }
+    : { name, command, args });
+  if (!result.ok) { $('mcpHint').textContent = result.error; return; }
+  $('mcpName').value = '';
+  $('mcpCommand').value = '';
+  render(await window.ade.getSnapshot());
 });

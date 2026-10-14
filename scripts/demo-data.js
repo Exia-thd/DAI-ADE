@@ -102,6 +102,37 @@ for (const dir of [root, ...featurePath.values()]) {
   }
 }
 
+/* ------------------------------------------------------- the MCP servers -- */
+
+// One that answers, one that cannot start, one remote that is never checked
+// from here. A panel built to tell these apart has to be demonstrated with all
+// three, or the picture only proves the happy path renders.
+const MCP_STUB = path.join(root, 'tools', 'notes-mcp.js');
+fs.mkdirSync(path.dirname(MCP_STUB), { recursive: true });
+fs.writeFileSync(MCP_STUB, [
+  "const readline = require('readline');",
+  'const rl = readline.createInterface({ input: process.stdin });',
+  "const send = (m) => process.stdout.write(JSON.stringify(m) + '\\n');",
+  "rl.on('line', (line) => {",
+  '  let req; try { req = JSON.parse(line); } catch { return; }',
+  "  if (req.method === 'initialize') send({ jsonrpc: '2.0', id: req.id, result: {",
+  "    protocolVersion: '2024-11-05', capabilities: { tools: {} },",
+  "    serverInfo: { name: 'notes', version: '1.0.0' } } });",
+  "  if (req.method === 'tools/list') send({ jsonrpc: '2.0', id: req.id, result: { tools: [",
+  "    { name: 'search_notes', description: 'Search the engineering notes by phrase' },",
+  "    { name: 'append_note', description: 'Append a dated note to the current feature' },",
+  "    { name: 'list_decisions', description: 'List the decisions recorded for this project' }] } });",
+  '});',
+].join('\n') + '\n');
+
+fs.writeFileSync(path.join(root, '.mcp.json'), JSON.stringify({
+  mcpServers: {
+    notes: { command: 'node', args: [MCP_STUB] },
+    'legacy-indexer': { command: 'node', args: [path.join(root, 'tools', 'retired-indexer.js')] },
+    'design-system': { type: 'http', url: 'https://design.example.invalid/mcp' },
+  },
+}, null, 2) + '\n');
+
 /* ------------------------------------------------------------- sessions --- */
 
 /**

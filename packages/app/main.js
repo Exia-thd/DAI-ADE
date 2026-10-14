@@ -23,6 +23,7 @@ const { eventsDir } = require('../emitter/src/emit.js');
 const bridge = require('../shell/src/ingest/harnessBridge.js');
 const worktrees = require('../shell/src/git/worktrees.js');
 const mcp = require('../shell/src/mcp/client.js');
+const mcpRegistry = require('../shell/src/mcp/registry.js');
 const { AgentSession, isResumable, resolveCli } = require('../shell/src/agent/session.js');
 const runnerRegistry = require('../shell/src/agent/runners.js');
 const slashCommands = require('../shell/src/agent/commands.js');
@@ -236,6 +237,7 @@ function snapshot() {
       : (runId ? index.tree(runId) : []),
     features,
     activeFeature,
+    mcp: mcpServers(),
     chat: (() => {
       const key = activeFeature ?? MAIN_FEATURE;
       const chat = chatFor(key);
@@ -250,6 +252,8 @@ function snapshot() {
         model: chat.model,
         command: commandPreview(chat, key),
         commands: slashCommands.list(cwd, chat.seenCommands),
+        mcpSelection: chat.mcpSelection ?? null,
+        mcpSupported: Boolean((runnerRegistry.get(project, chat.runnerId).mcpArgs || []).length),
         // Said out loud, because it changes what the next message does: a new
         // session starts cold, a resumed one remembers.
         continues: isResumable(chat.sessionId),
@@ -314,6 +318,17 @@ const SHOT_OUT = (process.env.ADE_SHOT_SIZE || '1920x1080').split('x').map(Numbe
 // so the frame really is the size asked for and nothing is upscaled.
 const SHOT_RENDER = SHOT_OUT;
 
+// Offscreen rendering goes through the GPU process, and on this machine that
+// process intermittently dies mid-capture - the run then stops with no error,
+// at a different step each time. The capture does not need a GPU, so it is
+// taken out of the equation rather than retried until it happens to work.
+// Only in screenshot mode: the ordinary window keeps its acceleration.
+if (SHOT_DIR) {
+  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('disable-software-rasterizer');
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: SHOT_DIR ? SHOT_RENDER[0] : 1340,
@@ -344,7 +359,16 @@ function createWindow() {
     });
   }
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // In screenshot mode nobody is watching the window, so each step says where
+  // it got to. A capture that stops produced no output at all once, and the
+  // silence was the whole difficulty.
+  if (SHOT_DIR) {
+    console.log('window created');
+    win.webContents.on('did-fail-load', (_e, code, desc) => console.error('load failed:', code, desc));
+    win.webContents.on('render-process-gone', (_e, details) => console.error('renderer gone:', JSON.stringify(details)));
+  }
   win.webContents.on('did-finish-load', () => {
+    if (SHOT_DIR) console.log('window loaded');
     send('ade:snapshot', snapshot());
     if (SHOT_DIR) captureTabs().catch((err) => { console.error(err); app.exit(1); });
   });
@@ -369,7 +393,7 @@ async function captureTabs() {
   console.log(`content size: ${actual[0]}x${actual[1]}`);
   await wait(2500);
 
-  for (const tab of ['observe', 'agents', 'workspaces']) {
+  for (const tab of ['observe', 'agents', 'workspaces', 'mcp']) {
     await win.webContents.executeJavaScript(
       `document.querySelector('.tab[data-view="${tab}"]').click(); true;`,
     );
@@ -377,6 +401,18 @@ async function captureTabs() {
       await win.webContents.executeJavaScript(
         "(() => { const c = document.querySelector('.gnode, .agent'); if (c) c.click(); return true; })();",
       );
+    }
+    if (tab === 'mcp') {
+      // Checking means connecting, so the panel is shown having actually asked
+      // the servers rather than displaying three grey dots.
+      await win.webContents.executeJavaScript(
+        "(() => { document.getElementById('mcpCheckAll').click(); return true; })();",
+      );
+      await wait(2500);
+      await win.webContents.executeJavaScript(
+        "(() => { const r = document.querySelector('.mcp.ok'); if (r) r.click(); return true; })();",
+      );
+      await wait(600);
     }
     if (tab === 'workspaces') {
       // Select the first worktree so the diff pane has something in it.
@@ -489,6 +525,80 @@ function pushChat(chat, message) {
   dirty = true;
 }
 
+/* --- MCP: what exists, what works, and what an agent may reach ------------ */
+
+// Probe results, kept between snapshots: checking spawns a process per server,
+// so it happens when asked rather than four times a second.
+const mcpChecks = new Map();
+
+function mcpServers() {
+  if (!project) return [];
+  return mcpRegistry.discover(project).map((server) => ({
+    name: server.name,
+    scope: server.scope,
+    source: server.source,
+    transport: server.transport,
+    command: server.command,
+    args: server.args,
+    url: server.url,
+    check: mcpChecks.get(server.name) || null,
+  }));
+}
+
+ipcMain.handle('ade:mcpList', () => mcpServers());
+
+ipcMain.handle('ade:mcpCheck', async (_e, { name } = {}) => {
+  const servers = mcpRegistry.discover(project);
+  const targets = name ? servers.filter((s) => s.name === name) : servers;
+  // In parallel: one slow server should not hold up the rest of the panel.
+  await Promise.all(targets.map(async (server) => {
+    const result = await mcpRegistry.probe(server);
+    mcpChecks.set(server.name, { ...result, at: new Date().toISOString() });
+  }));
+  dirty = true;
+  return mcpServers();
+});
+
+ipcMain.handle('ade:mcpSelect', (_e, { feature, names }) => {
+  const chat = chatFor(feature ?? MAIN_FEATURE);
+  // null means "whatever the agent is already configured with" - the default,
+  // because taking control of someone's MCP setup should be a choice they make,
+  // not what happens when they open a window.
+  chat.mcpSelection = Array.isArray(names) ? names : null;
+  dirty = true;
+  return snapshot();
+});
+
+ipcMain.handle('ade:mcpRemove', (_e, { name }) => {
+  const result = mcpRegistry.removeFromProject(project, name);
+  if (result.ok) mcpChecks.delete(name);
+  dirty = true;
+  return result;
+});
+
+ipcMain.handle('ade:mcpAdd', (_e, { name, command, args, url }) => {
+  const clean = String(name || '').trim();
+  if (!clean) return { ok: false, error: 'a server needs a name' };
+  const definition = url
+    ? { type: 'http', url: String(url).trim() }
+    : { command: String(command || '').trim(), args: splitArgs(args) };
+  if (!url && !definition.command) return { ok: false, error: 'a stdio server needs a command' };
+  try {
+    const file = mcpRegistry.addToProject(project, clean, definition);
+    dirty = true;
+    return { ok: true, file };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+/** Arguments as a person types them, with quoted runs kept together. */
+function splitArgs(text) {
+  if (Array.isArray(text)) return text.map(String);
+  const out = String(text || '').match(/"[^"]*"|'[^']*'|\S+/g) || [];
+  return out.map((a) => a.replace(/^["']|["']$/g, ''));
+}
+
 /** The runners, with what is installed on this machine right now. */
 function runnerList() {
   return runnerRegistry.available(project, resolveCli).map((r) => ({
@@ -507,6 +617,7 @@ function commandPreview(chat, key) {
     resume: runner.sessions && isResumable(chat.sessionId),
     permissionMode: 'acceptEdits',
     promptFile: '<prompt file>',
+    mcpConfig: Array.isArray(chat.mcpSelection) ? '<mcp selection>' : null,
   });
   return [runner.command, ...args].join(' ');
 }
@@ -551,6 +662,26 @@ ipcMain.handle('ade:sendPrompt', (_e, { feature, text }) => {
   pushChat(chat, { kind: 'user', text: prompt });
 
   const runner = runnerRegistry.get(project, chat.runnerId);
+
+  // A selection is enforced by handing the agent a config of our own, never by
+  // editing the project's .mcp.json or the person's settings.
+  let mcpConfig = null;
+  if (Array.isArray(chat.mcpSelection) && runner.mcpArgs && runner.mcpArgs.length) {
+    const chosen = mcpRegistry.discover(project).filter((s) => chat.mcpSelection.includes(s.name));
+    mcpConfig = mcpRegistry.writeSelection(chosen, path.join(app.getPath('userData'), 'mcp', key));
+    pushChat(chat, {
+      kind: 'note',
+      text: chosen.length
+        ? `MCP limited to: ${chosen.map((s) => s.name).join(', ')}`
+        : 'MCP disabled for this run',
+    });
+  } else if (Array.isArray(chat.mcpSelection)) {
+    pushChat(chat, {
+      kind: 'note',
+      text: `${runner.label} cannot be told which MCP servers to use, so the selection was not applied.`,
+    });
+  }
+
   const session = new AgentSession({
     cwd,
     prompt,
@@ -560,6 +691,7 @@ ipcMain.handle('ade:sendPrompt', (_e, { feature, text }) => {
     permissionMode: 'acceptEdits',
     runner,
     model: chat.model,
+    mcpConfig,
   });
 
   // Said once, when it matters: a runner that does not emit this tool's hooks

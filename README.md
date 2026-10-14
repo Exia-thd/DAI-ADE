@@ -179,6 +179,38 @@ executable that has to be launched through a shell — on Windows these CLIs are
 plain text and nothing is invented from it — no tool calls, no cost, because
 the runner never said any of that.
 
+### MCP
+
+The **MCP** tab lists every server this project could be using — from the
+project's own `.mcp.json`, from `~/.claude.json`, and from the entries kept
+there for one project only — with where each one was declared.
+
+Two different questions, kept apart. *What is configured* comes from the files.
+*Does it work* only comes from connecting, so a dot stays grey until **Check**
+has actually handshaken with the server: it runs a real `initialize` and
+`tools/list`, then lists the tools under the names the agent will see them by
+(`mcp__notes__search_notes`). A server that cannot start says so in one readable
+line, and an HTTP or SSE server is reported as *not checked from here* rather
+than guessed at in either direction.
+
+The **give** checkbox is the part worth having. It decides which servers the
+agent launched from the dock may reach, and it is enforced by writing a config
+of this window's own and passing `--mcp-config … --strict-mcp-config` — never by
+editing the project's `.mcp.json` or anybody's settings. Measured before it was
+built: a session launched that way came back reporting
+`mcp_servers: [{name, status}]` for exactly the servers in that file. Untick
+everything and the agent runs with no MCP at all, which is a real and sometimes
+correct choice. Leave the selection alone and no flags are passed, so the agent
+keeps whatever it was already configured with.
+
+A runner that declares no `mcpArgs` cannot be told any of this, and the panel
+says so instead of letting the boxes imply otherwise.
+
+Adding a server writes to the project's `.mcp.json` and only ever there — a
+`name` plus either a command with its arguments or an `https://` URL. Removing
+is offered only for servers declared in that file, because this tool does not
+edit a person's own configuration behind their back.
+
 ### Slash commands
 
 The `/` button lists the commands available where the agent will run — typing

@@ -77,12 +77,13 @@ class AgentSession extends EventEmitter {
    * @param {string} [options.permissionMode]
    */
   constructor({ cwd, prompt, resume = null, permissionMode = 'acceptEdits',
-    runner = runners.CLAUDE_CODE, model = 'default' }) {
+    runner = runners.CLAUDE_CODE, model = 'default', mcpConfig = null }) {
     super();
     this.cwd = cwd;
     this.prompt = prompt;
     this.runner = runner;
     this.model = model;
+    this.mcpConfig = mcpConfig;
     // Resuming keeps the id, so the conversation stays one run on the map
     // instead of fragmenting into a new one per message.
     // A runner without sessions gets a fresh id anyway, because the run id on
@@ -103,6 +104,7 @@ class AgentSession extends EventEmitter {
       resume: this.resumed,
       permissionMode: this.permissionMode,
       promptFile: this.promptFile,
+      mcpConfig: this.mcpConfig,
     });
   }
 
@@ -252,6 +254,10 @@ function normalise(record) {
       // What this session will accept as a slash command. Kept so the composer
       // can offer the ones no file on disk explains - built-ins and plugins.
       slashCommands: Array.isArray(record.slash_commands) ? record.slash_commands : null,
+      // Each server's real connection status, from the session itself. This is
+      // the only place that says whether a server the agent was given actually
+      // came up.
+      mcpServers: Array.isArray(record.mcp_servers) ? record.mcp_servers : null,
     });
     return out;
   }

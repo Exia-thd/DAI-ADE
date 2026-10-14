@@ -18,6 +18,11 @@ contextBridge.exposeInMainWorld('ade', {
   sendPrompt: (feature, text) => ipcRenderer.invoke('ade:sendPrompt', { feature, text }),
   cancelPrompt: (feature) => ipcRenderer.invoke('ade:cancelPrompt', { feature }),
   setRunner: (feature, runnerId, model) => ipcRenderer.invoke('ade:setRunner', { feature, runnerId, model }),
+  mcpList: () => ipcRenderer.invoke('ade:mcpList'),
+  mcpCheck: (name) => ipcRenderer.invoke('ade:mcpCheck', { name }),
+  mcpSelect: (feature, names) => ipcRenderer.invoke('ade:mcpSelect', { feature, names }),
+  mcpAdd: (server) => ipcRenderer.invoke('ade:mcpAdd', server),
+  mcpRemove: (name) => ipcRenderer.invoke('ade:mcpRemove', { name }),
   openProject: () => ipcRenderer.invoke('ade:openProject'),
 
   // The workflow half.

@@ -40,6 +40,12 @@ const CLAUDE_CODE = {
   modelArgs: ['--model', '{model}'],
   observable: true,
   verified: true,
+  // How this runner is told which MCP servers it may use. Measured before it
+  // was written: --mcp-config with --strict-mcp-config gives a session exactly
+  // the servers in that file, and its first record reports each one's
+  // connection status. A runner that declares no mcpArgs simply cannot be
+  // given a selection, and the window says so rather than pretending.
+  mcpArgs: ['--mcp-config', '{mcpConfig}', '--strict-mcp-config'],
   // Aliases rather than dated ids: an alias keeps pointing at the current
   // model, and a pinned id goes stale silently. `default` passes no flag at
   // all, so whatever the CLI is configured with stays in charge.
@@ -145,6 +151,7 @@ function normalise(entry, source) {
     newSessionArgs: toArray(entry.newSessionArgs),
     resumeArgs: toArray(entry.resumeArgs),
     modelArgs: toArray(entry.modelArgs),
+    mcpArgs: toArray(entry.mcpArgs),
     env: entry.env && typeof entry.env === 'object' ? { ...entry.env } : {},
     // Default false: a runner has to claim it emits this tool's events, rather
     // than being assumed to and leaving an empty map to explain.
@@ -173,8 +180,8 @@ function fill(args, values) {
 }
 
 /** The exact argv for one launch. */
-function buildArgs(runner, { model, session, resume, permissionMode, promptFile }) {
-  const values = { model, session, permissionMode, promptFile };
+function buildArgs(runner, { model, session, resume, permissionMode, promptFile, mcpConfig }) {
+  const values = { model, session, permissionMode, promptFile, mcpConfig };
   const args = [...fill(runner.args, values)];
 
   if (model && model !== 'default' && runner.modelArgs.length) {
@@ -182,6 +189,9 @@ function buildArgs(runner, { model, session, resume, permissionMode, promptFile 
   }
   if (runner.sessions && session) {
     args.push(...fill(resume ? runner.resumeArgs : runner.newSessionArgs, values));
+  }
+  if (mcpConfig && runner.mcpArgs.length) {
+    args.push(...fill(runner.mcpArgs, values));
   }
   if (runner.promptVia === 'file' && runner.promptArgs.length) {
     args.push(...fill(runner.promptArgs, values));

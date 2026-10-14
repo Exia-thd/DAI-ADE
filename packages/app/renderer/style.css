@@ -344,3 +344,30 @@ code{font-family:var(--mono);background:var(--line2);padding:.05rem .25rem;borde
 .cmd b{font-family:var(--mono);font-size:.72rem;color:var(--blue);font-weight:700;flex:none}
 .cmd span{font-size:.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cmd i{margin-left:auto;font-style:normal;font-family:var(--mono);font-size:.6rem;color:var(--faint);flex:none}
+
+/* ----------------------------------------------------------------- mcp --- */
+#mcp{flex:1;display:grid;gap:.5rem;padding:.5rem .8rem .8rem;min-height:0;grid-template-columns:1.5fr 1fr}
+#mcp[hidden]{display:none}
+.mcp-list{overflow:auto;padding:.6rem .7rem;flex:1;min-height:0;display:flex;flex-direction:column;gap:.4rem}
+.mcp{border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:.5rem .6rem;cursor:pointer}
+.mcp:hover{border-color:var(--blue)}
+.mcp.sel{border-color:var(--blue);box-shadow:0 0 0 2px rgba(18,99,210,.14)}
+.mcp-head{display:flex;align-items:center;gap:.45rem}
+.mcp-name{font-family:var(--mono);font-weight:700;font-size:.8rem;color:var(--ink)}
+.mcp-dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.mcp.ok .mcp-dot{background:var(--green)}
+.mcp.bad .mcp-dot{background:var(--red)}
+.mcp-why{font-size:.72rem;color:var(--red);margin-top:.3rem;font-family:var(--mono);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mcp-cmd{font-family:var(--mono);font-size:.67rem;color:var(--faint);margin-top:.25rem;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mcp-acts{margin-left:auto;display:flex;gap:.3rem;align-items:center;flex:none}
+.mcp-pick{display:flex;align-items:center;gap:.25rem;font-size:.68rem;color:var(--muted);
+  font-family:var(--mono)}
+.mcp-add{display:flex;gap:.4rem;padding:.5rem .7rem;border-top:1px solid var(--line2);flex:none}
+.mcp-tools{overflow:auto;padding:.6rem .7rem;flex:1;min-height:0}
+.mcp-tool{border-bottom:1px solid var(--line2);padding:.35rem 0}
+.mcp-tool b{font-family:var(--mono);font-size:.74rem;color:var(--blue);display:block}
+.mcp-tool span{font-size:.73rem;color:var(--muted);line-height:1.4}
+.mcp-note{font-size:.72rem;color:var(--muted);padding:.4rem .7rem;border-top:1px solid var(--line2);
+  flex:none;line-height:1.45}
