@@ -93,6 +93,20 @@ with the button that approves it.
 **Workspaces** is the worktree half: every worktree with its objective and how
 far it has diverged, a diff for each, and create/remove.
 
+Along the bottom is **Give work**: a box that runs an agent in the checkout of
+whichever feature tab is open. The first message starts a session; the next one
+continues it, and the dock says which of the two is about to happen. What comes
+back is the real stream — the tools it calls as it calls them, the answer, and
+the run's own reported cost — and because the agent runs under the ordinary
+hooks, the same work also appears on the map, the timeline and the feature's
+event count. Nothing you type is ever passed on the command line; the prompt is
+written to the agent's stdin.
+
+Agents launched this way run with `acceptEdits`: they may edit files, and still
+have to ask for anything riskier. Each one works inside its feature's worktree,
+so a wrong edit is contained to that checkout. An agent started by this window
+is stopped when the window closes.
+
 Restart Claude Code in the watched project so the hooks take effect.
 
 ---
@@ -123,6 +137,21 @@ Session → turns → the tools and sub-agents each turn actually spawned, with
 durations, and failures marked. That tree is the data the Flow view will draw.
 
 ---
+
+## What the hooks actually are
+
+Worth writing down, because getting it wrong is silent. Claude Code fires
+`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop` and
+`SessionEnd`. It does **not** fire `SubagentStart` — and a settings file naming
+an event it does not know makes it discard the whole hooks block without a
+warning, an error, or a single event. This tool shipped that name for a while:
+the agent answered, and the window stayed empty.
+
+A sub-agent is therefore observed through the `Task` tool, which is what
+actually spawns one. `PreToolUse` carries its type and its brief; `PostToolUse`
+carries the sub-agent's own `totalTokens`, `totalToolUseCount` and
+`totalDurationMs`. That is where the per-worker figures on the map come from —
+work attributed to the worker that did it, rather than to the turn it sat in.
 
 ## Why the events come from hooks
 

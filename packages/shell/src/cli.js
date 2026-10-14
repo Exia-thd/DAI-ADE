@@ -207,7 +207,7 @@ function cmdWork(argv) {
 
 /* --------------------------------------------------------- install-hooks -- */
 
-const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'SubagentStart', 'SubagentStop', 'Stop'];
+const { installHooks, ensureHooks, HOOK_EVENTS } = require('./agent/hooks.js');
 
 /**
  * Install the emitter into the PROJECT settings only.
@@ -220,33 +220,13 @@ const HOOK_EVENTS = ['SessionStart', 'UserPromptSubmit', 'PreToolUse', 'PostTool
  */
 function cmdInstallHooks(argv) {
   const root = projectRoot(argv);
-  const target = path.join(root, '.claude', 'settings.json');
-  const emitPath = path.resolve(__dirname, '..', '..', 'emitter', 'src', 'emit.js').replace(/\\/g, '/');
-  const command = `node "${emitPath}"`;
+  const planned = installHooks(root);
+  if (planned.error) return console.error(C.red(planned.error));
+  if (!planned.added) return console.log(C.dim('emitter already installed in ' + planned.target));
+  if (argv.includes('--dry-run')) return console.log(JSON.stringify(planned.settings, null, 2));
 
-  let settings = {};
-  if (fs.existsSync(target)) {
-    try { settings = JSON.parse(fs.readFileSync(target, 'utf8')); }
-    catch { return console.error(C.red(`${target} is not valid JSON — refusing to touch it`)); }
-  }
-  settings.hooks = settings.hooks || {};
-
-  let added = 0;
-  for (const event of HOOK_EVENTS) {
-    const matchers = (settings.hooks[event] = settings.hooks[event] || []);
-    const already = matchers.some((m) => (m.hooks || []).some((h) => String(h.command || '').includes('emit.js')));
-    if (already) continue;
-    matchers.push({ matcher: '*', hooks: [{ type: 'command', command }] });
-    added++;
-  }
-
-  if (!added) return console.log(C.dim('emitter already installed in ' + target));
-  if (argv.includes('--dry-run')) {
-    return console.log(JSON.stringify(settings, null, 2));
-  }
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, JSON.stringify(settings, null, 2) + '\n');
-  console.log(C.green(`installed into ${added} hook event(s)`) + C.dim(` in ${target}`));
+  const result = ensureHooks(root);
+  console.log(C.green(`installed into ${result.added} hook event(s)`) + C.dim(` in ${result.target}`));
   console.log(C.dim('restart the session for hooks to take effect'));
 }
 

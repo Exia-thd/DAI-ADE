@@ -33,13 +33,20 @@ const ROOT_SPAN = 'sp_root';
 /** Map a Claude Code hook name onto the event taxonomy. */
 const HOOK_MAP = {
   SessionStart: 'RUN_STARTED',
+  SessionEnd: 'RUN_ENDED',
   UserPromptSubmit: 'TURN_STARTED',
   Stop: 'TURN_ENDED',
   PreToolUse: 'TOOL_PROPOSED',
   PostToolUse: 'TOOL_EXECUTED',
+  // Kept so a payload from an older runner still lands somewhere sensible, but
+  // not installed: `SubagentStart` is not an event Claude Code fires, and
+  // SubagentStop cannot say which sub-agent it belongs to. The Task tool can.
   SubagentStart: 'WORKER_SPAWNED',
   SubagentStop: 'WORKER_DELIVERED',
 };
+
+/** The tool that spawns a sub-agent. */
+const TASK_TOOL = 'Task';
 
 function readStdin() {
   try {
@@ -86,18 +93,32 @@ function classify(hook, payload) {
   const type = HOOK_MAP[hook];
   if (!type) return null;
 
+  // A sub-agent is not announced by a hook of its own; it is the `Task` tool
+  // being used. Observed directly from the payloads: PreToolUse carries
+  // `subagent_type` and the brief, and PostToolUse carries the sub-agent's own
+  // token count, tool count and duration. Reporting these as tool calls would
+  // throw away the only place parallel delegation is visible.
+  const toolName = payload.tool_name || payload.toolName;
+  if (toolName === TASK_TOOL) {
+    if (hook === 'PreToolUse') return 'WORKER_SPAWNED';
+    if (hook === 'PostToolUse') return failed(payload) ? 'WORKER_FAILED' : 'WORKER_DELIVERED';
+  }
+
   // A PostToolUse carrying an error is a failure, not an execution. The Flow
   // view colours these differently and the distinction is the whole reason to
   // look at the timeline, so it must not be flattened into one type.
-  if (type === 'TOOL_EXECUTED') {
-    const response = payload.tool_response ?? payload.tool_output ?? payload.response;
-    const errored =
-      (response && typeof response === 'object' && (response.is_error === true || response.error)) ||
-      payload.is_error === true ||
-      (typeof payload.exit_code === 'number' && payload.exit_code !== 0);
-    if (errored) return 'TOOL_FAILED';
-  }
+  if (type === 'TOOL_EXECUTED' && failed(payload)) return 'TOOL_FAILED';
   return type;
+}
+
+/** Did the tool this payload describes come back with an error? */
+function failed(payload) {
+  const response = payload.tool_response ?? payload.tool_output ?? payload.response;
+  return Boolean(
+    (response && typeof response === 'object' && (response.is_error === true || response.error))
+    || payload.is_error === true
+    || (typeof payload.exit_code === 'number' && payload.exit_code !== 0),
+  );
 }
 
 function build(payload) {
@@ -121,7 +142,7 @@ function build(payload) {
   // span made the tree say a session lasted as long as its last prompt, and
   // made "which turn did this tool call belong to" unanswerable — and several
   // turns per session is the normal case, not the edge one.
-  if (type === 'RUN_STARTED') {
+  if (type === 'RUN_STARTED' || type === 'RUN_ENDED') {
     spanId = ROOT_SPAN;
     parentSpanId = null;
     actor = { kind: 'root', id: sessionId };
@@ -138,11 +159,20 @@ function build(payload) {
     parentSpanId = currentTurnSpan(payload.cwd, runId) || ROOT_SPAN;
     actor = { kind: 'tool', id: toolName || 'unknown' };
   } else if (isWorker) {
-    const workerId = String(payload.subagent_id || payload.agent_id || payload.agent_type || newId().slice(0, 8));
-    spanId = `sp_w_${shortHash(`${sessionId}:${workerId}`, 12)}`;
+    const task = toolName === TASK_TOOL ? (toolInput || {}) : {};
+    // What a person would call it: the brief the parent wrote. Falling back to
+    // the agent type keeps older payloads working.
+    const workerId = String(
+      task.description || payload.subagent_id || payload.agent_id
+      || task.subagent_type || payload.agent_type || newId().slice(0, 8),
+    );
+    // Derived from the arguments, exactly as a tool span is, so the spawn and
+    // the result pair up across two separate hook processes.
+    spanId = `sp_w_${shortHash(`${sessionId}:${workerId}:${stableStringify(task.prompt ?? null)}`, 12)}`;
     parentSpanId = currentTurnSpan(payload.cwd, runId) || ROOT_SPAN;
     actor = { kind: 'worker', id: workerId };
-    if (payload.agent_type) actor.tier = String(payload.agent_type);
+    const tier = task.subagent_type || payload.agent_type;
+    if (tier) actor.tier = String(tier);
   } else {
     spanId = ROOT_SPAN;
     parentSpanId = null;
@@ -150,7 +180,20 @@ function build(payload) {
   }
 
   const payloadOut = { hook };
-  if (toolName) payloadOut.tool = toolName;
+  if (toolName && !isWorker) payloadOut.tool = toolName;
+
+  // The Task result reports what the sub-agent itself cost. This tool used to
+  // say "tools counted on its session" because nothing attributed work to a
+  // sub-agent; these three numbers do, and they come from the runner.
+  if (isWorker) {
+    const response = payload.tool_response ?? payload.tool_output ?? payload.response;
+    if (response && typeof response === 'object') {
+      if (Number.isFinite(Number(response.totalTokens))) payloadOut.totalTokens = Number(response.totalTokens);
+      if (Number.isFinite(Number(response.totalToolUseCount))) payloadOut.toolUses = Number(response.totalToolUseCount);
+      if (Number.isFinite(Number(response.totalDurationMs))) payloadOut.durationMs = Number(response.totalDurationMs);
+    }
+    if (toolInput && toolInput.prompt) payloadOut.brief = summarise(toolInput.prompt, 300);
+  }
   if (toolInput !== undefined) payloadOut.input = summarise(toolInput);
   const response = payload.tool_response ?? payload.tool_output ?? payload.response;
   if (response !== undefined) payloadOut.response = summarise(response, 400);

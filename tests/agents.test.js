@@ -121,6 +121,36 @@ test('a sub-agent is listed with its type, and does not claim zero tools', () =>
   assert.equal(worker.attributable, false);
 });
 
+test('a sub-agent that reported its own work is counted on its own work', () => {
+  const index = build([
+    session('r', AT(40)),
+    session('r', AT(40), 'TURN_STARTED', 'sp_turn'),
+    { type: 'WORKER_SPAWNED', run_id: 'r', span_id: 'sp_w', parent_span_id: 'sp_turn',
+      actor: { kind: 'worker', id: 'Audit the retry path', tier: 'Explore' }, ts: AT(38), payload: {} },
+    { type: 'WORKER_DELIVERED', run_id: 'r', span_id: 'sp_w', parent_span_id: 'sp_turn',
+      actor: { kind: 'worker', id: 'Audit the retry path', tier: 'Explore' }, ts: AT(20),
+      payload: { totalTokens: 10_776, toolUses: 4, durationMs: 3_142 } },
+  ]);
+  const worker = index.agents('*').find((a) => a.kind === 'worker');
+  assert.equal(worker.attributable, true, 'the Task result attributes the work');
+  assert.equal(worker.tools, 4);
+  assert.equal(worker.totalTokens, 10_776);
+  assert.equal(worker.elapsedMs, 3_142, 'its own duration, not the span it sat in');
+  assert.equal(worker.status, 'done', 'the result says it finished');
+});
+
+test('a session is done only when the stream says it ended', () => {
+  const live = build([session('r', AT(10))]);
+  assert.equal(live.agents('*')[0].status, 'working');
+
+  const ended = build([
+    session('r', AT(60)),
+    { type: 'RUN_ENDED', run_id: 'r', span_id: 'sp_root', parent_span_id: null,
+      actor: { kind: 'root', id: 'sess-r' }, ts: AT(10) },
+  ]);
+  assert.equal(ended.agents('*')[0].status, 'done');
+});
+
 test('phases and gates are not agents', () => {
   const index = build([
     session('r', AT(30)),

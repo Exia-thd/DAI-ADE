@@ -23,6 +23,8 @@ const { eventsDir } = require('../emitter/src/emit.js');
 const bridge = require('../shell/src/ingest/harnessBridge.js');
 const worktrees = require('../shell/src/git/worktrees.js');
 const mcp = require('../shell/src/mcp/client.js');
+const { AgentSession, isResumable } = require('../shell/src/agent/session.js');
+const { ensureHooks } = require('../shell/src/agent/hooks.js');
 const { makeEvent } = require('../shared/src/events.js');
 
 const PREFS = path.join(app.getPath('userData'), 'prefs.json');
@@ -232,6 +234,20 @@ function snapshot() {
       : (runId ? index.tree(runId) : []),
     features,
     activeFeature,
+    chat: (() => {
+      const key = activeFeature ?? MAIN_FEATURE;
+      const chat = chatFor(key);
+      return {
+        target: key,
+        cwd: chat.cwd ?? featureCwd(key),
+        running: chat.running,
+        runId: chat.runId ?? null,
+        // Said out loud, because it changes what the next message does: a new
+        // session starts cold, a resumed one remembers.
+        continues: isResumable(chat.sessionId),
+        messages: chat.messages,
+      };
+    })(),
     summary: combined ? index.summaryAll() : (runId ? index.summary(runId) : null),
     events,
     truncated: Math.max(0, allEvents.length - events.length),
@@ -379,6 +395,27 @@ async function captureTabs() {
   await wait(1400);
   await shoot('feature');
 
+  // Optionally send a real prompt and wait for the real answer. Opt-in because
+  // it costs money, but when it runs the chat in the image is an actual agent
+  // working in an actual worktree — the one thing a mock-up of a chat window
+  // can never be.
+  if (process.env.ADE_SHOT_PROMPT) {
+    await win.webContents.executeJavaScript(`(() => {
+      document.getElementById('chatInput').value = ${JSON.stringify(process.env.ADE_SHOT_PROMPT || '')};
+      document.getElementById('chatSend').click();
+      return true;
+    })();`);
+    for (let i = 0; i < 90; i++) {
+      await wait(1000);
+      const running = await win.webContents.executeJavaScript(
+        "document.getElementById('chatStop').hidden === false",
+      );
+      if (!running && i > 3) break;
+    }
+    await wait(1200);
+    await shoot('chat');
+  }
+
   app.exit(0);
 }
 
@@ -395,6 +432,98 @@ async function shoot(name) {
 /* ----------------------------------------------------------------- ipc --- */
 
 ipcMain.handle('ade:getSnapshot', () => snapshot());
+
+/* --- giving work: the half that was missing ------------------------------- */
+
+/**
+ * One conversation per feature.
+ *
+ * Keyed the same way the tabs are, because that is how the work is actually
+ * organised: a feature is a worktree, a worktree is where its agent runs, so
+ * "talk to the agent on this feature" is one unambiguous thing. A single global
+ * chat box would have to ask every time which checkout it meant.
+ */
+const chats = new Map();
+const MAX_CHAT_MESSAGES = 300;
+
+function chatFor(feature) {
+  const key = feature ?? MAIN_FEATURE;
+  if (!chats.has(key)) chats.set(key, { messages: [], session: null, sessionId: null, running: false });
+  return chats.get(key);
+}
+
+/** The checkout a feature's work happens in. */
+function featureCwd(feature) {
+  if (!feature || feature === MAIN_FEATURE) return project;
+  const workspace = listWorkspaces().find((w) => w.managed && w.taskId === feature);
+  return workspace ? workspace.path : project;
+}
+
+function pushChat(chat, message) {
+  chat.messages.push({ ...message, at: new Date().toISOString() });
+  if (chat.messages.length > MAX_CHAT_MESSAGES) chat.messages.splice(0, chat.messages.length - MAX_CHAT_MESSAGES);
+  dirty = true;
+}
+
+ipcMain.handle('ade:sendPrompt', (_e, { feature, text }) => {
+  if (!project) return { ok: false, error: 'open a project first' };
+  const prompt = String(text || '').trim();
+  if (!prompt) return { ok: false, error: 'nothing to send' };
+
+  const key = feature ?? MAIN_FEATURE;
+  const chat = chatFor(key);
+  if (chat.running) return { ok: false, error: 'that agent is still working' };
+
+  const cwd = featureCwd(key);
+
+  // Without the hooks in THIS checkout the session runs and the window shows
+  // nothing: the first one launched here answered correctly and emitted not a
+  // single event. A worktree does not inherit them, so they are put in place
+  // before the agent starts rather than left as a thing to remember.
+  const hooks = ensureHooks(cwd);
+  if (hooks.error) return { ok: false, error: hooks.error };
+  if (hooks.written) {
+    pushChat(chat, { kind: 'note', text: `installed the event hooks in ${hooks.target}` });
+  }
+
+  pushChat(chat, { kind: 'user', text: prompt });
+
+  const session = new AgentSession({
+    cwd,
+    prompt,
+    // Continue the conversation when there is one to continue; Claude Code only
+    // resumes ids it issued, so a session seen through hooks alone cannot be.
+    resume: isResumable(chat.sessionId) ? chat.sessionId : null,
+    permissionMode: 'acceptEdits',
+  });
+
+  chat.session = session;
+  chat.sessionId = session.sessionId;
+  chat.runId = session.runId;
+  chat.running = true;
+  chat.cwd = cwd;
+
+  session.on('message', (message) => pushChat(chat, message));
+  session.on('end', () => {
+    chat.running = false;
+    chat.session = null;
+    // The hooks write as the process exits; pick the tail up promptly so the
+    // map shows the work rather than catching up on the next poll.
+    syncHarness();
+    dirty = true;
+  });
+  session.start();
+
+  dirty = true;
+  return { ok: true, runId: session.runId, sessionId: session.sessionId, cwd };
+});
+
+ipcMain.handle('ade:cancelPrompt', (_e, { feature }) => {
+  const chat = chatFor(feature ?? MAIN_FEATURE);
+  const stopped = chat.session ? chat.session.cancel() : false;
+  if (stopped) { chat.running = false; chat.session = null; dirty = true; }
+  return { ok: stopped };
+});
 
 ipcMain.handle('ade:selectFeature', (_e, feature) => {
   activeFeature = feature ?? null;
@@ -496,6 +625,10 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  // An agent this window started is this window's responsibility. Leaving one
+  // running against a worktree nobody is watching is how you find a surprise
+  // commit tomorrow.
+  for (const chat of chats.values()) if (chat.session) chat.session.cancel();
   if (tailer) tailer.stop();
   if (process.platform !== 'darwin') app.quit();
 });

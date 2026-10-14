@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld('ade', {
   getSnapshot: () => ipcRenderer.invoke('ade:getSnapshot'),
   selectRun: (runId) => ipcRenderer.invoke('ade:selectRun', runId),
   selectFeature: (feature) => ipcRenderer.invoke('ade:selectFeature', feature),
+  sendPrompt: (feature, text) => ipcRenderer.invoke('ade:sendPrompt', { feature, text }),
+  cancelPrompt: (feature) => ipcRenderer.invoke('ade:cancelPrompt', { feature }),
   openProject: () => ipcRenderer.invoke('ade:openProject'),
 
   // The workflow half.

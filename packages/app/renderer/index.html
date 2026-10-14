@@ -92,6 +92,23 @@
   </section>
 </main>
 
+<section id="dock" class="dock">
+  <div class="dock-head">
+    <span class="dock-title">Give work</span>
+    <span id="chatTarget" class="dock-target">→ main</span>
+    <span id="chatStatus" class="dock-status"></span>
+    <div class="spacer"></div>
+    <button id="chatStop" class="btn" hidden>Stop</button>
+    <button id="chatToggle" class="btn">Hide</button>
+  </div>
+  <div id="chatLog" class="chat-log"></div>
+  <div class="composer">
+    <textarea id="chatInput" rows="2" spellcheck="false"
+      placeholder="What should the agent do in this worktree?  (Enter to send, Shift+Enter for a new line)"></textarea>
+    <button id="chatSend" class="btn btn-go">Send</button>
+  </div>
+</section>
+
 <div id="empty" class="empty">
   <p><b>Nothing to watch yet.</b></p>
   <p>Open the project whose agents you want to observe, then install the emitter into it:</p>

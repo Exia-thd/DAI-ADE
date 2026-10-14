@@ -170,7 +170,7 @@ const SESSIONS = [
     ],
   },
   {
-    id: 'sess-idempotency', feature: 'idempotent-charge', model: 'claude-opus-5',
+    id: 'sess-idempotency', ended: true, feature: 'idempotent-charge', model: 'claude-opus-5',
     prompt: 'Make charge idempotent with a request key',
     turns: [
       { tools: [['Read', { file: 'src/billing/charge.ts' }]],
@@ -204,7 +204,7 @@ const SESSIONS = [
     // Not every session is a feature branch. This one runs in the main
     // checkout, which is why the main checkout gets a tab of its own: without
     // it, selecting a feature would hide this work with nowhere to go back to.
-    id: 'sess-release-notes', feature: null, model: 'claude-sonnet-5-5',
+    id: 'sess-release-notes', ended: true, feature: null, model: 'claude-sonnet-5-5',
     prompt: 'Write the release notes for the billing hardening set',
     turns: [
       { tools: [['Read', { file: 'docs/billing.md' }], ['Bash', { command: 'git log --oneline -20' }]],
@@ -244,7 +244,12 @@ SESSIONS.forEach((session, n) => {
   for (const turn of session.turns) {
     emit({ hook_event_name: 'UserPromptSubmit', session_id: session.id, prompt: session.prompt }, 2);
     for (const agent of turn.agents) {
-      emit({ hook_event_name: 'SubagentStart', session_id: session.id, subagent_id: agent.id, agent_type: agent.type }, 2);
+      // A sub-agent is the `Task` tool being used - there is no hook that
+      // announces one. This is the payload Claude Code actually sends.
+      emit({
+        hook_event_name: 'PreToolUse', session_id: session.id, tool_name: 'Task',
+        tool_input: { description: agent.id, subagent_type: agent.type, prompt: agent.brief || session.prompt },
+      }, 2);
     }
     for (const [tool, input, options] of turn.tools) {
       toolCall(session.id, tool, input, options || {});
@@ -255,14 +260,27 @@ SESSIONS.forEach((session, n) => {
       // double-counted into the session that spawned it.
       const workerTranscript = writeTranscript(cwd, `${session.id}-${agent.id}`,
         { model, turns: 3, scale });
+      // The Task result is where a sub-agent's own figures come from.
       emit({
-        hook_event_name: 'SubagentStop', session_id: session.id,
-        subagent_id: agent.id, agent_type: agent.type, transcript_path: workerTranscript,
+        hook_event_name: 'PostToolUse', session_id: session.id, tool_name: 'Task',
+        tool_input: { description: agent.id, subagent_type: agent.type, prompt: agent.brief || session.prompt },
+        tool_response: {
+          totalTokens: Math.round(10_700 * scale),
+          totalToolUseCount: agent.tools ?? 3,
+          totalDurationMs: Math.round(14_000 * scale),
+        },
+        transcript_path: workerTranscript,
       }, 5);
     }
     if (!turn.leaveOpen) {
       emit({ hook_event_name: 'Stop', session_id: session.id, transcript_path: transcript }, 2);
     }
+  }
+  // Only the sessions that finished say so. A session between prompts has
+  // closed its turn but not itself, which is most of them at any moment - that
+  // distinction is the whole reason SessionEnd is worth having.
+  if (session.ended) {
+    emit({ hook_event_name: 'SessionEnd', session_id: session.id, reason: 'clear' }, 2);
   }
 });
 cwd = root;

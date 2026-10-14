@@ -364,6 +364,7 @@ function render(next) {
   defaultSelection();
   renderChrome();
   renderFeatures();
+  renderChat();
   renderGate();
   if (view === 'workspaces') renderWorkspaces();
   if (view === 'agents') { renderAgentsView(); renderAgentDetail(); }
@@ -681,7 +682,7 @@ function renderAgents() {
 
     const name = document.createElement('span');
     name.className = 'a-name';
-    name.textContent = agent.id;
+    name.textContent = agentLabel(agent);
     name.title = agent.id;
 
     const kind = document.createElement('span');
@@ -690,7 +691,8 @@ function renderAgents() {
 
     const when = document.createElement('span');
     when.className = 'a-when';
-    when.textContent = agent.status === 'working' ? 'working' : ago(agent.idleMs);
+    when.textContent = agent.status === 'working' ? 'working'
+      : (agent.status === 'done' ? 'finished' : ago(agent.idleMs));
 
     head.append(dot, name, kind, when);
     card.append(head);
@@ -739,6 +741,13 @@ function renderAgents() {
   }
 }
 
+/** Three states now, because SessionEnd and the Task result close things. */
+function statusText(agent) {
+  if (agent.status === 'working') return 'working';
+  if (agent.status === 'done') return `finished, ${ago(agent.idleMs)}`;
+  return `idle, last seen ${ago(agent.idleMs)}`;
+}
+
 function renderAgentDetail() {
   const host = $('agentDetail');
   const agents = (snap && snap.agents) || [];
@@ -758,7 +767,7 @@ function renderAgentDetail() {
   const kv = document.createElement('div');
   kv.className = 'kv';
   const rows = [
-    ['status', agent.status === 'working' ? 'working' : `idle, last seen ${ago(agent.idleMs)}`],
+    ['status', statusText(agent)],
     ['kind', agent.tier ? `${agent.kind} (${agent.tier})` : agent.kind],
     ['run', agent.runId],
     ['started', String(agent.startedAt || '').slice(11, 19)],
@@ -945,6 +954,13 @@ function renderAgentGraph() {
     box.className = `gnode ${agent.status}${agent.key === selectedAgent ? ' sel' : ''}`;
     box.style.left = `${node.x}px`;
     box.style.top = `${node.y}px`;
+    // Set from the same constants the connectors are drawn with. They used to
+    // be stated again in the stylesheet, and when the node grew to fit its
+    // third line only the layout knew: every connector started 36px clear of
+    // the box it came from, so the graph looked like loose boxes and stray
+    // dashes. Geometry gets one source of truth.
+    box.style.width = `${NODE_W}px`;
+    box.style.height = `${NODE_H}px`;
     box.addEventListener('click', () => { selectedAgent = agent.key; renderAgentsView(); renderAgentDetail(); });
 
     const head = document.createElement('div');
@@ -953,7 +969,7 @@ function renderAgentGraph() {
     dot.className = 'a-dot';
     const name = document.createElement('span');
     name.className = 'g-name';
-    name.textContent = agent.id;
+    name.textContent = agentLabel(agent);
     name.title = agent.id;
     head.append(dot, name);
 
@@ -1001,8 +1017,11 @@ function renderAgentGraph() {
 function renderAgentsView() {
   const agents = (snap && snap.agents) || [];
   const working = agents.filter((a) => a.status === 'working').length;
+  const done = agents.filter((a) => a.status === 'done').length;
+  const parts = [`${agents.length} agent${agents.length === 1 ? '' : 's'}`, `${working} working`];
+  if (done) parts.push(`${done} finished`);
   $('agentsHint').textContent = agents.length
-    ? `${agents.length} agent${agents.length === 1 ? '' : 's'} · ${working} working · click one for details`
+    ? `${parts.join(' · ')} · click one for details`
     : 'who is working, and on what';
   document.querySelectorAll('.layout-btn').forEach((b) =>
     b.classList.toggle('on', b.dataset.layout === agentLayout));
@@ -1069,3 +1088,139 @@ function renderFeatures() {
     host.append(tab);
   }
 }
+
+/* =================================================================== chat = */
+
+/**
+ * The composer, and what came back.
+ *
+ * Before this the window could only watch: you could see a feature stall and
+ * then had to leave for a terminal to do anything about it. The box sends into
+ * the worktree of whichever feature tab is open, so "talk to this feature" has
+ * one meaning and never needs a second question.
+ */
+let chatCollapsed = false;
+let lastChatCount = -1;
+let lastChatTarget = null;
+
+function renderChat() {
+  const chat = (snap && snap.chat) || { target: '(main)', messages: [], running: false };
+  const target = chat.target === '(main)' ? 'main' : chat.target;
+
+  $('chatTarget').textContent = `→ ${target}`;
+  $('chatTarget').title = chat.cwd || '';
+
+  const status = $('chatStatus');
+  status.className = `dock-status${chat.running ? ' on' : ''}`;
+  status.textContent = chat.running
+    ? 'agent is working…'
+    // Whether the next message continues the conversation or starts a new one
+    // changes what the agent knows, so it is stated rather than left to guess.
+    : (chat.continues ? 'the next message continues this session' : 'the next message starts a session');
+
+  $('chatStop').hidden = !chat.running;
+  $('chatSend').disabled = !snap || !snap.project || chat.running;
+  $('chatInput').disabled = !snap || !snap.project || chat.running;
+  $('chatToggle').textContent = chatCollapsed ? 'Show' : 'Hide';
+  $('dock').classList.toggle('collapsed', chatCollapsed);
+
+  // Repaint only when there is something new. The snapshot arrives four times a
+  // second and rebuilding the log under the cursor would fight the scrollbar.
+  if (chat.messages.length === lastChatCount && chat.target === lastChatTarget) return;
+  const atBottom = nearBottom($('chatLog'));
+  lastChatCount = chat.messages.length;
+  lastChatTarget = chat.target;
+
+  const log = $('chatLog');
+  log.textContent = '';
+  if (!chat.messages.length) {
+    const hint = document.createElement('div');
+    hint.className = 'msg note';
+    hint.textContent = snap && snap.project
+      ? `nothing sent yet — this box runs an agent in ${target}`
+      : 'open a project first';
+    log.append(hint);
+  }
+
+  for (const message of chat.messages) log.append(chatRow(message));
+  if (atBottom) log.scrollTop = log.scrollHeight;
+}
+
+function chatRow(message) {
+  const row = document.createElement('div');
+  row.className = `msg ${message.kind}`;
+
+  if (message.kind === 'tool') {
+    const name = document.createElement('b');
+    name.textContent = message.tool;
+    const detail = document.createElement('span');
+    detail.textContent = message.input || '';
+    detail.title = message.input || '';
+    row.append(name, detail);
+    return row;
+  }
+
+  if (message.kind === 'system') {
+    row.textContent = [message.model, message.permissionMode].filter(Boolean).join(' · ');
+    return row;
+  }
+
+  if (message.kind === 'result') {
+    // Reported, not estimated: the cost comes from the run's own result record.
+    const bits = [message.ok ? 'done' : 'failed'];
+    if (message.turns) bits.push(`${message.turns} turn${message.turns === 1 ? '' : 's'}`);
+    if (message.durationMs) bits.push(fmtDur(message.durationMs));
+    if (message.costUsd != null) bits.push(`$${message.costUsd.toFixed(4)}`);
+    row.textContent = bits.join(' · ');
+    return row;
+  }
+
+  row.textContent = message.text || '';
+  return row;
+}
+
+const nearBottom = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+
+/**
+ * What to call an agent on screen.
+ *
+ * A session Claude Code names itself is a UUID, and a node captioned
+ * `581380fd-da70-4264-ac88-475e13564b7e` tells a reader nothing while taking
+ * the whole line. The full id stays in the title and in the Inspector, where it
+ * is the thing you actually need.
+ */
+function agentLabel(agent) {
+  const id = String(agent.id || '');
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+    ? `session ${id.slice(0, 8)}`
+    : id;
+}
+
+async function sendPrompt() {
+  const input = $('chatInput');
+  const text = input.value.trim();
+  if (!text) return;
+  const feature = (snap && snap.activeFeature) ?? null;
+  input.value = '';
+  const result = await window.ade.sendPrompt(feature, text);
+  if (!result.ok) {
+    // Put the text back rather than losing it to an error banner.
+    input.value = text;
+    const status = $('chatStatus');
+    status.className = 'dock-status bad';
+    status.textContent = result.error;
+  }
+}
+
+$('chatSend').addEventListener('click', sendPrompt);
+$('chatStop').addEventListener('click', async () => {
+  await window.ade.cancelPrompt((snap && snap.activeFeature) ?? null);
+});
+$('chatToggle').addEventListener('click', () => {
+  chatCollapsed = !chatCollapsed;
+  lastChatCount = -1;          // force a repaint when it comes back
+  renderChat();
+});
+$('chatInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPrompt(); }
+});

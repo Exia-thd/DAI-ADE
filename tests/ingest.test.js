@@ -184,6 +184,48 @@ test('emitter maps real hook payloads onto the taxonomy', () => {
   assert.equal(spawned.actor.kind, 'worker');
 });
 
+test('a sub-agent is the Task tool, because no hook announces one', () => {
+  // Measured from the payloads Claude Code actually sends: there is no
+  // SubagentStart hook, and SubagentStop cannot say which sub-agent it belongs
+  // to. PreToolUse on `Task` carries the type and the brief, so that is where a
+  // worker appears. Reporting it as an ordinary tool call would hide the only
+  // place delegation is visible.
+  const input = { description: 'Audit the retry path', subagent_type: 'Explore', prompt: 'look at retry.ts' };
+
+  const pre = emitter.build({
+    hook_event_name: 'PreToolUse', session_id: 'sess-t', tool_name: 'Task', tool_input: input,
+  });
+  assert.equal(pre.type, 'WORKER_SPAWNED');
+  assert.equal(pre.actor.kind, 'worker');
+  assert.equal(pre.actor.id, 'Audit the retry path', 'named by the brief its parent wrote');
+  assert.equal(pre.actor.tier, 'Explore');
+
+  const post = emitter.build({
+    hook_event_name: 'PostToolUse', session_id: 'sess-t', tool_name: 'Task', tool_input: input,
+    tool_response: { totalTokens: 10_776, totalToolUseCount: 4, totalDurationMs: 3_142 },
+  });
+  assert.equal(post.type, 'WORKER_DELIVERED');
+  assert.equal(post.span_id, pre.span_id, 'the spawn and the result are one span');
+  // The sub-agent's own figures, which this tool previously treated as
+  // unknowable and printed as "tools counted on its session".
+  assert.equal(post.payload.totalTokens, 10_776);
+  assert.equal(post.payload.toolUses, 4);
+  assert.equal(post.payload.durationMs, 3_142);
+
+  const broken = emitter.build({
+    hook_event_name: 'PostToolUse', session_id: 'sess-t', tool_name: 'Task', tool_input: input,
+    tool_response: { is_error: true },
+  });
+  assert.equal(broken.type, 'WORKER_FAILED');
+});
+
+test('a session can end, so it is not drawn as running forever', () => {
+  const ended = emitter.build({ hook_event_name: 'SessionEnd', session_id: 'sess-z', reason: 'clear' });
+  assert.equal(ended.type, 'RUN_ENDED');
+  assert.equal(ended.span_id, 'sp_root', 'it closes the span RUN_STARTED opened');
+  assert.equal(ended.actor.kind, 'root');
+});
+
 test('emitter never throws on hostile or empty input', () => {
   for (const payload of [{}, { hook_event_name: 'Unknown' }, { hook_event_name: 'PreToolUse' },
     { hook_event_name: 'PreToolUse', tool_input: { deep: { a: [1, 2, { b: null }] } } }]) {

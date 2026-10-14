@@ -199,10 +199,26 @@ class RunIndex {
         const activeTool = toolSpans.filter((sp) => sp.status === 'open').pop();
         const lastTool = activeTool || toolSpans[toolSpans.length - 1] || null;
 
-        // Tokens and model come from COST_UPDATE, which the harness emits and
-        // hooks cannot: a hook payload carries no usage. Both stay null when
-        // nothing reported them - a node showing a confident 0 tokens would be
-        // read as "this agent used none", which is not what the stream says.
+        // A sub-agent reports itself. The `Task` tool's result carries the
+        // sub-agent's own token count, tool count and duration, which is how
+        // work gets attributed to the worker that did it instead of to the turn
+        // that happened to contain it. Absent for a worker still running, and
+        // absent entirely for a runner that does not report them.
+        let reported = null;
+        for (const event of events) {
+          const p = event.payload || {};
+          if (p.toolUses === undefined && p.totalTokens === undefined) continue;
+          reported = {
+            toolUses: Number.isFinite(Number(p.toolUses)) ? Number(p.toolUses) : null,
+            totalTokens: Number.isFinite(Number(p.totalTokens)) ? Number(p.totalTokens) : null,
+            durationMs: Number.isFinite(Number(p.durationMs)) ? Number(p.durationMs) : null,
+          };
+        }
+
+        // Tokens and model come from COST_UPDATE, which is read from the
+        // agent's transcript. Both stay null when nothing reported them - a
+        // node showing a confident 0 tokens would be read as "this agent used
+        // none", which is not what the stream says.
         let tokens = 0;
         let contextTokens = null;
         let model = entry.actor.model ?? null;
@@ -217,13 +233,18 @@ class RunIndex {
           if (p.model) model = p.model;
         }
 
-        const elapsedMs = Date.parse(last.ts) - Date.parse(spans[0].openedAt ?? events[0].ts);
+        const elapsedMs = reported && reported.durationMs != null
+          ? reported.durationMs
+          : Date.parse(last.ts) - Date.parse(spans[0].openedAt ?? events[0].ts);
         const idleMs = newest ? newest - Date.parse(last.ts) : 0;
-        // There is no session-end hook, so a session's root span is open
-        // forever and "has an open span" can never mean "still working".
-        // Recency is the only honest signal, and `done` is never claimed
-        // because nothing in the stream says a session finished.
-        const status = idleMs < 120_000 ? 'working' : 'idle';
+
+        // `done` is claimed only where the stream says so: SessionEnd closes a
+        // session, and the Task result closes a sub-agent. Everywhere else
+        // recency is still the only honest signal - an agent that stopped
+        // without saying so is idle, not finished.
+        const ended = events.some((e) => e.type === 'RUN_ENDED')
+          || spans.every((sp) => sp.status !== 'open');
+        const status = ended ? 'done' : (idleMs < 120_000 ? 'working' : 'idle');
         const hadFailure = spans.some((sp) => sp.status === 'failed')
           || toolSpans.some((sp) => sp.status === 'failed');
 
@@ -235,17 +256,22 @@ class RunIndex {
           tier: entry.actor.tier ?? null,
           model,
           tokens: tokens || null,
-        contextTokens,
+          contextTokens,
+          // A worker's own total, when the runner gave one.
+          totalTokens: reported ? reported.totalTokens : null,
           elapsedMs: Number.isFinite(elapsedMs) ? elapsedMs : null,
           parentKey: parentAgentKey(run, spans, id),
           status,
           hadFailure,
-          attributable: entry.actor.kind !== 'worker',
+          // True once something attributed work to this actor. For a sub-agent
+          // that is the Task result; without it the view still refuses to print
+          // a zero, because "0 tools" reads as "did nothing".
+          attributable: entry.actor.kind !== 'worker' || Boolean(reported && reported.toolUses !== null),
           startedAt: spans[0].openedAt ?? events[0].ts,
           lastSeenAt: last.ts,
           idleMs,
           turns: spans.filter((sp) => sp.type === 'TURN_STARTED').length,
-          tools: toolSpans.length,
+          tools: reported && reported.toolUses !== null ? reported.toolUses : toolSpans.length,
           blocked: toolSpans.filter((sp) => sp.closedBy === 'TOOL_BLOCKED').length,
           failedTools: toolSpans.filter((sp) => sp.closedBy === 'TOOL_FAILED').length,
           doing: lastTool
