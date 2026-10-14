@@ -98,15 +98,22 @@
     <span id="chatTarget" class="dock-target">→ main</span>
     <span id="chatStatus" class="dock-status"></span>
     <div class="spacer"></div>
+    <select id="runnerSelect" class="select" aria-label="Agent"></select>
+    <select id="modelSelect" class="select" aria-label="Model"></select>
+    <input id="modelCustom" class="input" hidden spellcheck="false"
+           placeholder="model id, then Enter" aria-label="Custom model id">
+    <button id="cmdBtn" class="btn" title="Slash commands">/</button>
     <button id="chatStop" class="btn" hidden>Stop</button>
     <button id="chatToggle" class="btn">Hide</button>
   </div>
+  <div id="cmdMenu" class="cmd-menu" hidden></div>
   <div id="chatLog" class="chat-log"></div>
   <div class="composer">
     <textarea id="chatInput" rows="2" spellcheck="false"
-      placeholder="What should the agent do in this worktree?  (Enter to send, Shift+Enter for a new line)"></textarea>
+      placeholder="What should the agent do in this worktree?  (Enter to send, Shift+Enter for a new line, / for commands)"></textarea>
     <button id="chatSend" class="btn btn-go">Send</button>
   </div>
+  <div id="chatCommand" class="chat-command" title="the exact command this will run"></div>
 </section>
 
 <div id="empty" class="empty">

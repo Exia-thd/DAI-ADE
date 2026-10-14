@@ -23,7 +23,9 @@ const { eventsDir } = require('../emitter/src/emit.js');
 const bridge = require('../shell/src/ingest/harnessBridge.js');
 const worktrees = require('../shell/src/git/worktrees.js');
 const mcp = require('../shell/src/mcp/client.js');
-const { AgentSession, isResumable } = require('../shell/src/agent/session.js');
+const { AgentSession, isResumable, resolveCli } = require('../shell/src/agent/session.js');
+const runnerRegistry = require('../shell/src/agent/runners.js');
+const slashCommands = require('../shell/src/agent/commands.js');
 const { ensureHooks } = require('../shell/src/agent/hooks.js');
 const { makeEvent } = require('../shared/src/events.js');
 
@@ -237,11 +239,17 @@ function snapshot() {
     chat: (() => {
       const key = activeFeature ?? MAIN_FEATURE;
       const chat = chatFor(key);
+      const cwd = chat.cwd ?? featureCwd(key);
       return {
         target: key,
-        cwd: chat.cwd ?? featureCwd(key),
+        cwd,
         running: chat.running,
         runId: chat.runId ?? null,
+        runners: runnerList(),
+        runnerId: chat.runnerId,
+        model: chat.model,
+        command: commandPreview(chat, key),
+        commands: slashCommands.list(cwd, chat.seenCommands),
         // Said out loud, because it changes what the next message does: a new
         // session starts cold, a resumed one remembers.
         continues: isResumable(chat.sessionId),
@@ -395,6 +403,15 @@ async function captureTabs() {
   await wait(1400);
   await shoot('feature');
 
+  // The composer's own controls: which agent, which model, the exact command
+  // that follows, and the project's commands.
+  await win.webContents.executeJavaScript(`(() => {
+    document.getElementById('cmdBtn').click();
+    return true;
+  })();`);
+  await wait(900);
+  await shoot('composer');
+
   // Optionally send a real prompt and wait for the real answer. Opt-in because
   // it costs money, but when it runs the chat in the image is an actual agent
   // working in an actual worktree — the one thing a mock-up of a chat window
@@ -448,7 +465,14 @@ const MAX_CHAT_MESSAGES = 300;
 
 function chatFor(feature) {
   const key = feature ?? MAIN_FEATURE;
-  if (!chats.has(key)) chats.set(key, { messages: [], session: null, sessionId: null, running: false });
+  if (!chats.has(key)) {
+    chats.set(key, {
+      messages: [], session: null, sessionId: null, running: false,
+      // Chosen per feature: a scout on one worktree and the strongest model on
+      // another is the normal case, not an exotic one.
+      runnerId: 'claude-code', model: 'default', seenCommands: [],
+    });
+  }
   return chats.get(key);
 }
 
@@ -465,6 +489,42 @@ function pushChat(chat, message) {
   dirty = true;
 }
 
+/** The runners, with what is installed on this machine right now. */
+function runnerList() {
+  return runnerRegistry.available(project, resolveCli).map((r) => ({
+    id: r.id, label: r.label, command: r.command, installed: r.installed,
+    verified: r.verified, observable: r.observable, sessions: r.sessions,
+    models: r.models, source: r.source,
+  }));
+}
+
+/** Exactly what will be launched, so a wrong flag is visible, not mysterious. */
+function commandPreview(chat, key) {
+  const runner = runnerRegistry.get(project, chat.runnerId);
+  const args = runnerRegistry.buildArgs(runner, {
+    model: chat.model,
+    session: chat.sessionId || '<new>',
+    resume: runner.sessions && isResumable(chat.sessionId),
+    permissionMode: 'acceptEdits',
+    promptFile: '<prompt file>',
+  });
+  return [runner.command, ...args].join(' ');
+}
+
+ipcMain.handle('ade:setRunner', (_e, { feature, runnerId, model }) => {
+  const chat = chatFor(feature ?? MAIN_FEATURE);
+  if (runnerId && runnerId !== chat.runnerId) {
+    chat.runnerId = runnerId;
+    // A session id belongs to the agent that issued it. Carrying it across
+    // runners would ask one tool to resume another's conversation.
+    chat.sessionId = null;
+    chat.model = 'default';
+  }
+  if (model !== undefined && model !== null) chat.model = String(model);
+  dirty = true;
+  return snapshot();
+});
+
 ipcMain.handle('ade:sendPrompt', (_e, { feature, text }) => {
   if (!project) return { ok: false, error: 'open a project first' };
   const prompt = String(text || '').trim();
@@ -480,14 +540,17 @@ ipcMain.handle('ade:sendPrompt', (_e, { feature, text }) => {
   // nothing: the first one launched here answered correctly and emitted not a
   // single event. A worktree does not inherit them, so they are put in place
   // before the agent starts rather than left as a thing to remember.
-  const hooks = ensureHooks(cwd);
-  if (hooks.error) return { ok: false, error: hooks.error };
-  if (hooks.written) {
-    pushChat(chat, { kind: 'note', text: `installed the event hooks in ${hooks.target}` });
+  if (runnerRegistry.get(project, chat.runnerId).observable) {
+    const hooks = ensureHooks(cwd);
+    if (hooks.error) return { ok: false, error: hooks.error };
+    if (hooks.written) {
+      pushChat(chat, { kind: 'note', text: `installed the event hooks in ${hooks.target}` });
+    }
   }
 
   pushChat(chat, { kind: 'user', text: prompt });
 
+  const runner = runnerRegistry.get(project, chat.runnerId);
   const session = new AgentSession({
     cwd,
     prompt,
@@ -495,7 +558,25 @@ ipcMain.handle('ade:sendPrompt', (_e, { feature, text }) => {
     // resumes ids it issued, so a session seen through hooks alone cannot be.
     resume: isResumable(chat.sessionId) ? chat.sessionId : null,
     permissionMode: 'acceptEdits',
+    runner,
+    model: chat.model,
   });
+
+  // Said once, when it matters: a runner that does not emit this tool's hooks
+  // will answer here and change nothing on the map. Better said up front than
+  // discovered as an empty timeline.
+  if (!runner.observable) {
+    pushChat(chat, {
+      kind: 'note',
+      text: `${runner.label} does not emit this tool's events — its reply appears here, but its work will not appear on the map or the timeline.`,
+    });
+  }
+  if (runner.verified === false) {
+    pushChat(chat, {
+      kind: 'note',
+      text: `${runner.label} has not been verified by this project; if the flags are wrong, correct them in .dai-ade/runners.json.`,
+    });
+  }
 
   chat.session = session;
   chat.sessionId = session.sessionId;
@@ -503,7 +584,12 @@ ipcMain.handle('ade:sendPrompt', (_e, { feature, text }) => {
   chat.running = true;
   chat.cwd = cwd;
 
-  session.on('message', (message) => pushChat(chat, message));
+  session.on('message', (message) => {
+    // Built-ins and plugin commands exist in no file this can read; the session
+    // itself is the only place they are named.
+    if (message.kind === 'system' && message.slashCommands) chat.seenCommands = message.slashCommands;
+    pushChat(chat, message);
+  });
   session.on('end', () => {
     chat.running = false;
     chat.session = null;

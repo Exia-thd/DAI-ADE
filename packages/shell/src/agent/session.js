@@ -30,6 +30,7 @@ const { EventEmitter } = require('events');
 const crypto = require('crypto');
 
 const { shortHash } = require('../../../shared/src/events.js');
+const runners = require('./runners.js');
 
 /** The run id the emitter will derive from this session id. */
 function runIdFor(sessionId) {
@@ -41,18 +42,22 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isResumable = (sessionId) => UUID.test(String(sessionId || ''));
 
 /**
- * Where the CLI is.
+ * Where a runner's executable is.
  *
  * `claude` is an npm shim, so on Windows the thing on PATH is `claude.cmd` and
  * on everything else it is a shell script. Resolved explicitly rather than left
  * to the shell so that a missing CLI is reported as a missing CLI, instead of
  * surfacing as an unreadable exit code much later.
  */
-function resolveCli(env = process.env) {
-  if (env.ADE_CLAUDE_CLI) return env.ADE_CLAUDE_CLI;
+function resolveCli(command = 'claude', env = process.env) {
+  if (command === 'claude' && env.ADE_CLAUDE_CLI) return env.ADE_CLAUDE_CLI;
+  // An absolute path in the configuration is used as given.
+  if (path.isAbsolute(command)) {
+    try { return fs.statSync(command).isFile() ? command : null; } catch { return null; }
+  }
   const names = process.platform === 'win32'
-    ? ['claude.cmd', 'claude.exe', 'claude.bat', 'claude']
-    : ['claude'];
+    ? [`${command}.cmd`, `${command}.exe`, `${command}.bat`, command]
+    : [command];
   for (const dir of String(env.PATH || '').split(path.delimiter)) {
     if (!dir) continue;
     for (const name of names) {
@@ -71,14 +76,19 @@ class AgentSession extends EventEmitter {
    * @param {string} [options.resume]   an existing session id to continue
    * @param {string} [options.permissionMode]
    */
-  constructor({ cwd, prompt, resume = null, permissionMode = 'acceptEdits' }) {
+  constructor({ cwd, prompt, resume = null, permissionMode = 'acceptEdits',
+    runner = runners.CLAUDE_CODE, model = 'default' }) {
     super();
     this.cwd = cwd;
     this.prompt = prompt;
+    this.runner = runner;
+    this.model = model;
     // Resuming keeps the id, so the conversation stays one run on the map
     // instead of fragmenting into a new one per message.
+    // A runner without sessions gets a fresh id anyway, because the run id on
+    // the map is derived from it; it simply never asks to continue one.
     this.sessionId = isResumable(resume) ? resume : crypto.randomUUID();
-    this.resumed = isResumable(resume);
+    this.resumed = runner.sessions !== false && isResumable(resume);
     this.runId = runIdFor(this.sessionId);
     this.permissionMode = permissionMode;
     this.proc = null;
@@ -87,36 +97,75 @@ class AgentSession extends EventEmitter {
   }
 
   get args() {
-    const args = ['-p', '--output-format', 'stream-json', '--verbose',
-      '--permission-mode', this.permissionMode];
-    if (this.resumed) args.push('--resume', this.sessionId);
-    else args.push('--session-id', this.sessionId);
-    return args;
+    return runners.buildArgs(this.runner, {
+      model: this.model,
+      session: this.sessionId,
+      resume: this.resumed,
+      permissionMode: this.permissionMode,
+      promptFile: this.promptFile,
+    });
+  }
+
+  /**
+   * How the prompt reaches the process.
+   *
+   * stdin by default, so no text a person typed is ever parsed by a shell. A
+   * runner that cannot read stdin gets a file instead. Passing it as an
+   * argument is allowed only when the executable can be launched without a
+   * shell — otherwise a quote in the prompt would become a command, and no
+   * amount of escaping is worth that risk in a tool people will ship.
+   */
+  prepare(viaShell) {
+    if (this.runner.promptVia === 'file') {
+      this.promptFile = path.join(
+        fs.mkdtempSync(path.join(require('os').tmpdir(), 'ade-prompt-')), 'prompt.txt',
+      );
+      fs.writeFileSync(this.promptFile, this.prompt);
+      return { ok: true };
+    }
+    if (this.runner.promptVia === 'arg' && viaShell) {
+      return { ok: false, error: `${this.runner.label} is configured to take the prompt as an argument, but its executable has to be launched through a shell. Use "promptVia": "stdin" or "file".` };
+    }
+    return { ok: true };
   }
 
   start() {
-    const cli = resolveCli();
+    const cli = resolveCli(this.runner.command);
     if (!cli) {
       this.status = 'failed';
       // Said plainly, because the alternative is a window that looks broken.
-      this.emit('message', { kind: 'error', text: 'Claude Code CLI not found on PATH. Install it, or set ADE_CLAUDE_CLI to its path.' });
+      this.emit('message', {
+        kind: 'error',
+        text: `${this.runner.label}: "${this.runner.command}" was not found on PATH.`
+          + (this.runner.command === 'claude' ? ' Install Claude Code, or set ADE_CLAUDE_CLI to its path.' : ''),
+      });
       this.emit('end', { ok: false, code: null });
       return this;
     }
 
     // A .cmd shim cannot be executed directly by Node, so it goes through the
     // shell; the path is quoted because Program Files exists. No part of the
-    // prompt is here — it goes in on stdin below.
+    // prompt is on the command line — see prepare().
     const viaShell = /\.(cmd|bat)$/i.test(cli);
-    this.proc = spawn(viaShell ? `"${cli}"` : cli, this.args, {
+    const prepared = this.prepare(viaShell);
+    if (!prepared.ok) {
+      this.status = 'failed';
+      this.emit('message', { kind: 'error', text: prepared.error });
+      this.emit('end', { ok: false, code: null });
+      return this;
+    }
+
+    const args = this.runner.promptVia === 'arg' ? [...this.args, this.prompt] : this.args;
+    this.proc = spawn(viaShell ? `"${cli}"` : cli, args, {
       cwd: this.cwd,
       shell: viaShell,
       windowsHide: true,
-      env: { ...process.env, FORCE_COLOR: '0' },
+      env: { ...process.env, FORCE_COLOR: '0', ...(this.runner.env || {}) },
     });
 
     this.status = 'running';
-    this.proc.stdin.end(this.prompt);
+    if (this.runner.promptVia === 'stdin') this.proc.stdin.end(this.prompt);
+    else this.proc.stdin.end();
 
     this.proc.stdout.setEncoding('utf8');
     this.proc.stdout.on('data', (chunk) => this.consume(chunk));
@@ -134,6 +183,10 @@ class AgentSession extends EventEmitter {
     });
 
     this.proc.on('close', (code) => {
+      if (this.plain && this.plain.trim()) {
+        this.emit('message', { kind: 'assistant', text: this.plain.trim() });
+        this.plain = '';
+      }
       if (this.status === 'cancelled') return this.emit('end', { ok: false, code });
       this.status = code === 0 ? 'done' : 'failed';
       if (code !== 0 && this.stderr.trim()) {
@@ -147,6 +200,12 @@ class AgentSession extends EventEmitter {
 
   /** NDJSON, with the same torn-line discipline the event tailer uses. */
   consume(chunk) {
+    // A runner that just prints is read as plain text. Nothing is invented from
+    // it - no tool calls, no cost - because it did not say any of that.
+    if (this.runner.format !== 'claude-stream-json') {
+      this.plain = (this.plain || '') + chunk;
+      return;
+    }
     this.remainder += chunk;
     const lines = this.remainder.split('\n');
     this.remainder = lines.pop() ?? '';
@@ -190,6 +249,9 @@ function normalise(record) {
       model: record.model ?? null,
       permissionMode: record.permissionMode ?? null,
       sessionId: record.session_id ?? null,
+      // What this session will accept as a slash command. Kept so the composer
+      // can offer the ones no file on disk explains - built-ins and plugins.
+      slashCommands: Array.isArray(record.slash_commands) ? record.slash_commands : null,
     });
     return out;
   }
@@ -226,4 +288,4 @@ function summarise(input) {
   return null;
 }
 
-module.exports = { AgentSession, resolveCli, runIdFor, isResumable, normalise };
+module.exports = { AgentSession, resolveCli, runIdFor, isResumable, normalise, runners };

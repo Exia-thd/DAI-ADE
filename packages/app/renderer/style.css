@@ -329,3 +329,18 @@ code{font-family:var(--mono);background:var(--line2);padding:.05rem .25rem;borde
 .gnode.done,.agent.done{border-color:#cfe0f5}
 .gnode.done .a-dot,.agent.done .a-dot{background:var(--blue)}
 .dock{max-height:32vh}
+
+/* ------------------------------------------- runner, model, commands --- */
+.dock-head .select{max-width:12rem}
+.dock-head .select:disabled{opacity:.5}
+.chat-command{font-family:var(--mono);font-size:.63rem;color:var(--faint);
+  padding:0 .8rem .5rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none}
+
+.cmd-menu{flex:none;max-height:11rem;overflow:auto;border-bottom:1px solid var(--line2);
+  background:#f8fbff;padding:.3rem}
+.cmd-menu[hidden]{display:none}
+.cmd{display:flex;gap:.5rem;align-items:baseline;padding:.26rem .5rem;border-radius:5px;cursor:pointer}
+.cmd:hover,.cmd.on{background:#e6f0fb}
+.cmd b{font-family:var(--mono);font-size:.72rem;color:var(--blue);font-weight:700;flex:none}
+.cmd span{font-size:.72rem;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmd i{margin-left:auto;font-style:normal;font-family:var(--mono);font-size:.6rem;color:var(--faint);flex:none}

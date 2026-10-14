@@ -1118,6 +1118,7 @@ function renderChat() {
     // changes what the agent knows, so it is stated rather than left to guess.
     : (chat.continues ? 'the next message continues this session' : 'the next message starts a session');
 
+  renderRunnerControls(chat);
   $('chatStop').hidden = !chat.running;
   $('chatSend').disabled = !snap || !snap.project || chat.running;
   $('chatInput').disabled = !snap || !snap.project || chat.running;
@@ -1223,4 +1224,155 @@ $('chatToggle').addEventListener('click', () => {
 });
 $('chatInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendPrompt(); }
+});
+
+/* ------------------------------------------- which agent, which model --- */
+
+const CUSTOM_MODEL = '__custom__';
+
+/**
+ * The agent, the model, and the command line that follows from them.
+ *
+ * The command is printed because two of the shipped runners have never been
+ * run by this project: their executable names were confirmed, their flags were
+ * not. Showing exactly what will be launched turns a wrong flag into something
+ * you can see and correct, instead of an error with no visible cause. It is
+ * also the fastest way to answer "what is this thing actually doing".
+ */
+function renderRunnerControls(chat) {
+  const runners = chat.runners || [];
+  const runner = runners.find((r) => r.id === chat.runnerId) || runners[0];
+
+  const rs = $('runnerSelect');
+  rs.textContent = '';
+  for (const entry of runners) {
+    const option = document.createElement('option');
+    option.value = entry.id;
+    // Said on the option itself, so the choice is informed before it is made.
+    const notes = [];
+    if (!entry.installed) notes.push('not installed');
+    else if (!entry.verified) notes.push('unverified');
+    if (!entry.observable) notes.push('no events');
+    option.textContent = notes.length ? `${entry.label} — ${notes.join(', ')}` : entry.label;
+    option.selected = entry.id === chat.runnerId;
+    rs.append(option);
+  }
+  rs.disabled = chat.running;
+
+  const ms = $('modelSelect');
+  ms.textContent = '';
+  const models = (runner && runner.models) || [{ id: 'default', label: 'Default' }];
+  const known = models.some((m) => m.id === chat.model);
+  for (const model of models) {
+    const option = document.createElement('option');
+    option.value = model.id;
+    option.textContent = model.label;
+    option.selected = model.id === chat.model;
+    ms.append(option);
+  }
+  if (!known && chat.model) {
+    const option = document.createElement('option');
+    option.value = chat.model;
+    option.textContent = chat.model;
+    option.selected = true;
+    ms.append(option);
+  }
+  const custom = document.createElement('option');
+  custom.value = CUSTOM_MODEL;
+  custom.textContent = 'Custom…';
+  ms.append(custom);
+  ms.disabled = chat.running;
+
+  const command = $('chatCommand');
+  command.textContent = chat.command ? `$ ${chat.command}` : '';
+  command.title = chat.command || '';
+
+  renderCommandMenu(chat);
+}
+
+$('runnerSelect').addEventListener('change', async (e) => {
+  render(await window.ade.setRunner((snap && snap.activeFeature) ?? null, e.target.value, null));
+});
+
+$('modelSelect').addEventListener('change', async (e) => {
+  // A model id this project does not know is still a model: typed in, passed
+  // through, and shown in the command line so it is obvious what was sent.
+  // Typed into the window rather than a dialog, because Electron has no
+  // window.prompt - calling it does nothing at all, which would have looked
+  // like the Custom option being broken.
+  if (e.target.value === CUSTOM_MODEL) {
+    const field = $('modelCustom');
+    field.hidden = false;
+    field.value = '';
+    field.focus();
+    return;
+  }
+  $('modelCustom').hidden = true;
+  render(await window.ade.setRunner((snap && snap.activeFeature) ?? null, null, e.target.value));
+});
+
+$('modelCustom').addEventListener('keydown', async (e) => {
+  if (e.key === 'Escape') { $('modelCustom').hidden = true; return render(snap); }
+  if (e.key !== 'Enter') return;
+  const model = $('modelCustom').value.trim();
+  if (!model) return;
+  $('modelCustom').hidden = true;
+  render(await window.ade.setRunner((snap && snap.activeFeature) ?? null, null, model));
+});
+
+/* ----------------------------------------------------- slash commands --- */
+
+let cmdOpen = false;
+
+function renderCommandMenu(chat) {
+  const menu = $('cmdMenu');
+  const all = chat.commands || [];
+  const typed = $('chatInput').value;
+  const query = cmdOpen && typed.startsWith('/') ? typed.slice(1).toLowerCase() : '';
+  const matches = all.filter((c) => c.name.toLowerCase().includes(query));
+
+  menu.hidden = !cmdOpen;
+  if (!cmdOpen) return;
+
+  menu.textContent = '';
+  if (!matches.length) {
+    const empty = document.createElement('div');
+    empty.className = 'cmd';
+    empty.textContent = all.length ? 'no command matches' : 'no commands found in .claude/commands';
+    menu.append(empty);
+    return;
+  }
+
+  for (const command of matches) {
+    const row = document.createElement('div');
+    row.className = 'cmd';
+    const name = document.createElement('b');
+    name.textContent = `/${command.name}`;
+    const description = document.createElement('span');
+    description.textContent = command.description || '';
+    description.title = command.description || '';
+    const scope = document.createElement('i');
+    scope.textContent = command.scope;
+    row.append(name, description, scope);
+    row.addEventListener('click', () => {
+      $('chatInput').value = `/${command.name} `;
+      cmdOpen = false;
+      renderCommandMenu(chat);
+      $('chatInput').focus();
+    });
+    menu.append(row);
+  }
+}
+
+$('cmdBtn').addEventListener('click', () => {
+  cmdOpen = !cmdOpen;
+  renderCommandMenu((snap && snap.chat) || {});
+});
+
+$('chatInput').addEventListener('input', () => {
+  // Opens on a leading slash, the way it does in the agent's own prompt.
+  const open = $('chatInput').value.startsWith('/');
+  if (open !== cmdOpen) cmdOpen = open;
+  if (cmdOpen) renderCommandMenu((snap && snap.chat) || {});
+  else $('cmdMenu').hidden = true;
 });

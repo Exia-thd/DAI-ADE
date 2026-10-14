@@ -84,6 +84,24 @@ for (const feature of FEATURES) {
   }
 }
 
+/* ------------------------------------------------- the project's commands -- */
+
+// Commands a team standardised on. They live in the checkout, so every worktree
+// has its own copy - which is why the composer reads them from the directory
+// the agent will actually run in rather than from the repository root.
+const COMMANDS = {
+  'verify.md': '---\ndescription: Run the gate for this feature and report the evidence\n---\nRun the project gate and report what passed.\n',
+  'review/api.md': '---\ndescription: Review the public surface for breaking changes\n---\nReview the public API surface for breaking changes.\n',
+  'handoff.md': '---\ndescription: Summarise this worktree for whoever picks it up\n---\nSummarise the state of this worktree.\n',
+};
+for (const dir of [root, ...featurePath.values()]) {
+  for (const [name, body] of Object.entries(COMMANDS)) {
+    const file = path.join(dir, '.claude', 'commands', name);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, body);
+  }
+}
+
 /* ------------------------------------------------------------- sessions --- */
 
 /**

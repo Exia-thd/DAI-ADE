@@ -107,6 +107,90 @@ have to ask for anything riskier. Each one works inside its feature's worktree,
 so a wrong edit is contained to that checkout. An agent started by this window
 is stopped when the window closes.
 
+The dock also carries the agent, the model, the project's slash commands, and
+the exact command line that follows from those choices.
+
+---
+
+## Which agent, which model
+
+The window is not tied to one vendor. It watches a stream of events, and
+nothing about that stream belongs to a particular company, so the agent that
+produces the work is configuration rather than code.
+
+| Runner | Shipped | Verified here | Emits events |
+|---|---|---|---|
+| Claude Code (`claude`) | yes | **yes** | yes — its work appears on the map |
+| Codex CLI (`codex`) | yes | no | no |
+| Gemini CLI (`gemini`) | yes | no | no |
+
+Be clear about what that table says. Only Claude Code has been run by this
+project. For the other two the executable names were confirmed against the npm
+registry (`@openai/codex` → `codex`, `@google/gemini-cli` → `gemini`); their
+flags were not, because neither is installed on the machine this was built on.
+So the window marks them *unverified*, greys out any runner whose executable is
+not on PATH, and — the part that matters — **prints the exact command before it
+runs one**. A wrong flag becomes something you can see and fix in a second,
+instead of an error with no visible cause.
+
+Neither Codex nor Gemini emits this tool's hooks, so their replies appear in the
+dock but their work does not appear on the map or the timeline. The window says
+so when you pick one, rather than leaving an empty timeline to explain itself.
+
+The model dropdown offers the runner's aliases and a **Custom…** field for any
+model id, which is passed through verbatim and shown in the command line.
+`Default` passes no model flag at all, leaving whatever the CLI is configured
+with in charge — including a Bedrock, Vertex, or custom-endpoint setup, which a
+runner can also carry in its own `env`.
+
+### Adding another agent
+
+Any other command-line agent is added as data, in `.dai-ade/runners.json` in
+the project (or `~/.dai-ade/runners.json`). An entry whose `id` matches a
+built-in replaces it, which is also how you correct the Codex or Gemini flags
+without touching the code:
+
+```json
+{
+  "runners": [
+    {
+      "id": "house-agent",
+      "label": "House agent",
+      "command": "house",
+      "args": ["run", "--quiet"],
+      "modelArgs": ["--model", "{model}"],
+      "promptVia": "stdin",
+      "format": "text",
+      "sessions": false,
+      "observable": false,
+      "env": { "HOUSE_PROFILE": "ci" },
+      "models": [{ "id": "default", "label": "Default" }]
+    }
+  ]
+}
+```
+
+`promptVia` is `stdin` by default, because that is the safe one: no text
+anybody typed is ever parsed by a shell. `file` writes the prompt to a
+temporary file and substitutes `{promptFile}`. `arg` is refused for an
+executable that has to be launched through a shell — on Windows these CLIs are
+`.cmd` shims, and a quote in a prompt would become a command. `format`
+`claude-stream-json` reads the reply as it streams; anything else is read as
+plain text and nothing is invented from it — no tool calls, no cost, because
+the runner never said any of that.
+
+### Slash commands
+
+The `/` button lists the commands available where the agent will run — typing
+`/` in the box opens the same list. They are read from `.claude/commands/` in
+that checkout and from `~/.claude/commands/`, with the `description:` from each
+file's frontmatter; a nested directory namespaces a command, so
+`commands/review/api.md` is `/review:api`. Commands that exist in no file —
+built-ins, and anything a plugin supplies — are picked up from what a session
+reports about itself and listed too. Both halves were measured: a command file
+dropped into a project shows up in the session's own list and runs when it is
+sent as the prompt.
+
 Restart Claude Code in the watched project so the hooks take effect.
 
 ---
