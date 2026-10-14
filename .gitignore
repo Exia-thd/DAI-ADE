@@ -3,3 +3,4 @@ dist/
 .dai-ade/
 *.log
 .DS_Store
+release/

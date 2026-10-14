@@ -15,6 +15,7 @@
   <div id="project" class="path">no project</div>
   <div class="tabs" role="tablist">
     <button class="tab on" data-view="observe" role="tab">Observe</button>
+    <button class="tab" data-view="agents" role="tab">Agents</button>
     <button class="tab" data-view="workspaces" role="tab">Workspaces</button>
   </div>
   <div class="spacer"></div>
@@ -51,6 +52,18 @@
   <section class="pane" id="streamPane">
     <h2>Stream <small id="streamHint"></small></h2>
     <div id="stream" class="stream"></div>
+  </section>
+</main>
+
+<main id="agents" hidden>
+  <section class="pane" id="agentsPane">
+    <h2>Agent map <small id="agentsHint">who is working, and on what</small></h2>
+    <div id="agentList" class="agent-list"></div>
+  </section>
+
+  <section class="pane" id="agentDetailPane">
+    <h2>Agent <small id="agentDetailHint">select an agent</small></h2>
+    <div id="agentDetail" class="agent-detail"></div>
   </section>
 </main>
 

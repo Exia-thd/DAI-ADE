@@ -225,6 +225,28 @@ fs.writeFileSync(path.join(harnessDir, 'pipeline-state.json'), JSON.stringify({
   },
 }, null, 2));
 
+// Rebase the session stream so it ends a moment ago. Without this the demo is
+// always an hour stale and every agent reads as idle, which hides the one state
+// the map exists to show.
+rebaseToNow(path.join(root, '.dai-ade', 'events'), 30_000);
+
+function rebaseToNow(dir, endOffsetMs) {
+  let names = [];
+  try { names = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl')); } catch { return; }
+  const files = names.map((name) => {
+    const file = path.join(dir, name);
+    const events = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+    return { file, events };
+  });
+  const newest = Math.max(...files.flatMap((f) => f.events.map((e) => Date.parse(e.ts))));
+  if (!Number.isFinite(newest)) return;
+  const shift = Date.now() - endOffsetMs - newest;
+  for (const { file, events } of files) {
+    for (const event of events) event.ts = new Date(Date.parse(event.ts) + shift).toISOString();
+    fs.writeFileSync(file, events.map((e) => JSON.stringify(e)).join('\n') + '\n');
+  }
+}
+
 const bridged = bridge.sync(root);
 
 /* ---------------------------------------------------------------- done --- */

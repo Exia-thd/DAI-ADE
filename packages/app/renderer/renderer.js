@@ -362,6 +362,7 @@ function render(next) {
   renderChrome();
   renderGate();
   if (view === 'workspaces') renderWorkspaces();
+  if (view === 'agents') { renderAgents(); renderAgentDetail(); }
   renderCounters();
   renderFlow();
   renderRoster();
@@ -397,10 +398,12 @@ function setView(next) {
   view = next;
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('on', t.dataset.view === next));
   $('grid').hidden = next !== 'observe';
+  $('agents').hidden = next !== 'agents';
   $('workspaces').hidden = next !== 'workspaces';
   $('counters').hidden = next !== 'observe';
   renderGate();
   if (next === 'workspaces') renderWorkspaces();
+  if (next === 'agents') { renderAgents(); renderAgentDetail(); }
 }
 
 document.querySelectorAll('.tab').forEach((t) =>
@@ -623,3 +626,190 @@ async function decideGate(approved) {
 
 $('approveBtn').addEventListener('click', () => decideGate(true));
 $('rejectBtn').addEventListener('click', () => decideGate(false));
+
+/* ============================================================ the agent map = */
+
+let selectedAgent = null;
+
+function ago(ms) {
+  if (ms == null) return '';
+  if (ms < 1000) return 'just now';
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s ago`;
+  if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m ago`;
+  return `${Math.round(ms / 3_600_000)}h ago`;
+}
+
+function tag(kind, text) {
+  const el = document.createElement('span');
+  el.className = `tag ${kind}`;
+  el.textContent = text;
+  return el;
+}
+
+function renderAgents() {
+  const host = $('agentList');
+  const agents = (snap && snap.agents) || [];
+  host.textContent = '';
+
+  const working = agents.filter((a) => a.status === 'working').length;
+  $('agentsHint').textContent = agents.length
+    ? `${working} working, ${agents.length - working} idle`
+    : 'who is working, and on what';
+
+  if (!agents.length) {
+    const p = document.createElement('p');
+    p.className = 'dim';
+    p.textContent = snap && snap.project ? 'no agents seen yet' : 'open a project first';
+    host.append(p);
+    return;
+  }
+
+  for (const agent of agents) {
+    const card = document.createElement('div');
+    card.className = `agent ${agent.status}${agent.key === selectedAgent ? ' sel' : ''}`;
+    card.addEventListener('click', () => { selectedAgent = agent.key; renderAgents(); renderAgentDetail(); });
+
+    const head = document.createElement('div');
+    head.className = 'a-head';
+
+    const dot = document.createElement('span');
+    dot.className = 'a-dot';
+
+    const name = document.createElement('span');
+    name.className = 'a-name';
+    name.textContent = agent.id;
+    name.title = agent.id;
+
+    const kind = document.createElement('span');
+    kind.className = `a-kind ${agent.kind}`;
+    kind.textContent = agent.tier || (agent.kind === 'root' ? 'session' : agent.kind);
+
+    const when = document.createElement('span');
+    when.className = 'a-when';
+    when.textContent = agent.status === 'working' ? 'working' : ago(agent.idleMs);
+
+    head.append(dot, name, kind, when);
+    card.append(head);
+
+    if (agent.prompt) {
+      const prompt = document.createElement('div');
+      prompt.className = 'a-prompt';
+      prompt.textContent = agent.prompt.replace(/^"|"$/g, '');
+      card.append(prompt);
+    }
+
+    if (agent.doing) {
+      const doing = document.createElement('div');
+      doing.className = 'a-doing';
+      const t = document.createElement('span');
+      t.className = 't';
+      t.textContent = agent.doing.tool;
+      const d = document.createElement('span');
+      d.className = 'd';
+      d.textContent = agent.doing.detail || '';
+      d.title = agent.doing.detail || '';
+      doing.append(t, d);
+      if (agent.doing.live) {
+        const live = document.createElement('span');
+        live.className = 'live';
+        live.textContent = 'running';
+        doing.append(live);
+      }
+      card.append(doing);
+    }
+
+    const stats = document.createElement('div');
+    stats.className = 'a-stats';
+    if (agent.attributable) {
+      stats.append(tag('ahead', `${agent.tools} tool${agent.tools === 1 ? '' : 's'}`));
+      if (agent.blocked) stats.append(tag('dirty', `${agent.blocked} blocked`));
+      if (agent.failedTools) stats.append(tag('dirty', `${agent.failedTools} failed`));
+      if (agent.turns) stats.append(tag('clean', `${agent.turns} turn${agent.turns === 1 ? '' : 's'}`));
+    } else {
+      // Saying "0 tools" would read as "this agent did nothing", which is not
+      // what the stream says — it says nothing about which sub-agent ran them.
+      stats.append(tag('', 'tools counted on its session'));
+    }
+    card.append(stats);
+    host.append(card);
+  }
+}
+
+function renderAgentDetail() {
+  const host = $('agentDetail');
+  const agents = (snap && snap.agents) || [];
+  const agent = agents.find((a) => a.key === selectedAgent);
+  host.textContent = '';
+
+  if (!agent) {
+    $('agentDetailHint').textContent = 'select an agent';
+    const p = document.createElement('p');
+    p.className = 'dim';
+    p.textContent = 'select an agent to see what it has been doing';
+    host.append(p);
+    return;
+  }
+  $('agentDetailHint').textContent = `${agent.kind}:${agent.id}`;
+
+  const kv = document.createElement('div');
+  kv.className = 'kv';
+  const rows = [
+    ['status', agent.status === 'working' ? 'working' : `idle, last seen ${ago(agent.idleMs)}`],
+    ['kind', agent.tier ? `${agent.kind} (${agent.tier})` : agent.kind],
+    ['run', agent.runId],
+    ['started', String(agent.startedAt || '').slice(11, 19)],
+    ['last seen', String(agent.lastSeenAt || '').slice(11, 19)],
+  ];
+  if (agent.attributable) {
+    rows.push(['tool calls', String(agent.tools)]);
+    if (agent.blocked) rows.push(['blocked', String(agent.blocked)]);
+    if (agent.failedTools) rows.push(['failed', String(agent.failedTools)]);
+  }
+  for (const [k, v] of rows) {
+    const kEl = document.createElement('div');
+    kEl.className = 'k';
+    kEl.textContent = k;
+    const vEl = document.createElement('div');
+    vEl.className = 'v';
+    vEl.textContent = v;
+    kv.append(kEl, vEl);
+  }
+  host.append(kv);
+
+  if (agent.prompt) {
+    const h = document.createElement('div');
+    h.className = 'a-idle';
+    h.textContent = 'working on';
+    const q = document.createElement('pre');
+    q.textContent = agent.prompt.replace(/^"|"$/g, '');
+    host.append(h, q);
+  }
+
+  // Its own events, newest first: the detail nobody can get from a card.
+  const events = ((snap && snap.events) || [])
+    .filter((e) => e.actor && `${e.actor.kind}:${e.actor.id}` === `${agent.kind}:${agent.id}`)
+    .slice(-40).reverse();
+  if (events.length) {
+    const h = document.createElement('div');
+    h.className = 'a-idle';
+    h.textContent = `${events.length} recent event(s)`;
+    host.append(h);
+    for (const e of events) {
+      const row = document.createElement('div');
+      row.className = 'evrow';
+      const t = document.createElement('div');
+      t.className = 't';
+      t.textContent = `${String(e.ts).slice(11, 19)} · ${e.type}`;
+      row.append(t);
+      const detail = e.payload && (e.payload.tool || e.payload.gate || e.payload.hook);
+      if (detail) {
+        const d = document.createElement('div');
+        d.style.fontFamily = 'var(--mono)';
+        d.style.fontSize = '.68rem';
+        d.textContent = String(detail);
+        row.append(d);
+      }
+      host.append(row);
+    }
+  }
+}

@@ -118,6 +118,7 @@ function snapshot() {
     eventsDir: project ? eventsDir(project) : null,
     runs,
     selected: runId,
+    agents: index.agents(combined ? '*' : runId),
     tree: combined ? index.treeAll() : (runId ? index.tree(runId) : []),
     summary: combined ? index.summaryAll() : (runId ? index.summary(runId) : null),
     events,
@@ -198,6 +199,13 @@ function createWindow() {
     },
   });
   win.removeMenu();
+  // In screenshot mode the renderer has no devtools and no one watching, so a
+  // thrown error would just produce a blank image. Surface it.
+  if (SHOT_DIR) {
+    win.webContents.on('console-message', (_e, level, message, line, source) => {
+      if (level >= 2) console.error(`renderer: ${message} (${source}:${line})`);
+    });
+  }
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.webContents.on('did-finish-load', () => {
     send('ade:snapshot', snapshot());
@@ -224,10 +232,15 @@ async function captureTabs() {
   console.log(`content size: ${actual[0]}x${actual[1]}`);
   await wait(2500);
 
-  for (const tab of ['observe', 'workspaces']) {
+  for (const tab of ['observe', 'agents', 'workspaces']) {
     await win.webContents.executeJavaScript(
       `document.querySelector('.tab[data-view="${tab}"]').click(); true;`,
     );
+    if (tab === 'agents') {
+      await win.webContents.executeJavaScript(
+        "(() => { const c = document.querySelector('.agent'); if (c) c.click(); return true; })();",
+      );
+    }
     if (tab === 'workspaces') {
       // Select the first worktree so the diff pane has something in it.
       await win.webContents.executeJavaScript(

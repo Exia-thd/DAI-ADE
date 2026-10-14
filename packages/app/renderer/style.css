@@ -202,4 +202,42 @@ code{font-family:var(--mono);background:var(--line2);padding:.05rem .25rem;borde
    author rule that sets display -- grid or flex here -- silently beats it. Both
    views rendered at once until this existed. Stated per element rather than as
    a blanket [hidden] rule so it is obvious which ones need it and why. */
-#grid[hidden], #counters[hidden], #workspaces[hidden], #gatebar[hidden], .ws-error[hidden] { display: none; }
+#grid[hidden], #counters[hidden], #workspaces[hidden], #agents[hidden], #gatebar[hidden], .ws-error[hidden] { display: none; }
+
+/* -------------------------------------------------------------- agents --- */
+#agents{flex:1;display:grid;gap:.5rem;padding:.5rem .8rem .8rem;min-height:0;grid-template-columns:1.45fr 1fr}
+#agents[hidden]{display:none}
+.agent-list{overflow:auto;padding:.6rem .7rem;flex:1;min-height:0;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(305px,1fr));gap:.5rem;align-content:start}
+.agent{border:1px solid var(--line);border-radius:8px;background:var(--paper);padding:.6rem .7rem;cursor:pointer;transition:.15s}
+.agent:hover{border-color:var(--blue)}
+.agent.sel{border-color:var(--blue);box-shadow:0 0 0 2px rgba(18,99,210,.14)}
+.agent.working{border-color:#9ad2b4;background:linear-gradient(180deg,#f6fffb,var(--paper) 60%)}
+
+.a-head{display:flex;align-items:center;gap:.45rem}
+.a-dot{width:9px;height:9px;border-radius:50%;background:var(--faint);flex:none}
+.agent.working .a-dot{background:var(--green);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(15,118,110,.45)}50%{box-shadow:0 0 0 6px rgba(15,118,110,0)}}
+@media (prefers-reduced-motion:reduce){.agent.working .a-dot{animation:none}}
+
+.a-name{font-family:var(--mono);font-weight:700;font-size:.82rem;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.a-kind{font-family:var(--mono);font-size:.6rem;padding:.08rem .35rem;border-radius:3px;
+  background:var(--line2);color:var(--muted);flex:none}
+.a-kind.worker{background:#e9f3ec;color:var(--green)}
+.a-kind.root{background:#e6f0fb;color:var(--blue)}
+.a-when{margin-left:auto;font-family:var(--mono);font-size:.63rem;color:var(--faint);flex:none}
+
+.a-prompt{font-size:.73rem;color:var(--muted);margin-top:.3rem;line-height:1.35;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.a-doing{margin-top:.42rem;padding:.35rem .45rem;border-radius:5px;background:#f5f9fe;
+  border:1px solid var(--line2);font-family:var(--mono);font-size:.68rem;color:var(--ink2);
+  display:flex;gap:.4rem;align-items:baseline}
+.agent.working .a-doing{background:#f1fbf6;border-color:#cfeadd}
+.a-doing .t{font-weight:700;color:var(--blue);flex:none}
+.a-doing .d{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
+.a-doing .live{margin-left:auto;color:var(--green);flex:none}
+.a-stats{display:flex;gap:.3rem;margin-top:.42rem;flex-wrap:wrap}
+.a-idle{font-size:.7rem;color:var(--faint);margin-top:.4rem;font-family:var(--mono)}
+
+.agent-detail{overflow:auto;padding:.6rem .7rem;flex:1;min-height:0}

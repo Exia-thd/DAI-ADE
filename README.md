@@ -17,8 +17,18 @@ see [Milestones](#milestones).
 
 ## Install
 
-One file. It fetches the ADE, the harness and the memory layer, wires them into
-a project of your choosing, and leaves a launcher behind.
+### As an application
+
+`npm run dist` produces a Windows installer and a portable executable in
+`release/`. Install it and DAI ADE is an ordinary desktop application: Start
+Menu entry, desktop shortcut, its own icon, no terminal and no server. The
+window loads from `file://` — nothing is hosted and no port is opened.
+
+This installs the ADE alone. It watches any project you point it at, and shows
+whatever is there; the harness and the memory layer are what give it the
+decision trail to show.
+
+### The whole stack, in one file
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1 -Project C:\code\my-repo
@@ -48,7 +58,7 @@ there.
 Afterwards:
 
 ```
-ade                      # the window
+ade                      # the window (or the Start Menu entry)
 ade tail                 # follow events in a shell
 ade doctor               # what is wired up, and what is not
 
@@ -58,10 +68,13 @@ ade work diff <id>       # review what it changed
 ade work rm <id>         # remove it    --force --delete-branch
 ```
 
-The window has two tabs. **Observe** is the glass box: the flow timeline, the
+The window has three tabs. **Agents** is the map: a card per session and
+sub-agent, with its type, what it is working on, the tool it is running right
+now, and whether anything it tried was refused. Live agents pulse. **Observe**
+is the glass box: the flow timeline, the
 spawn roster, the inspector, the raw stream, and a bar across the top when a
-gate is waiting — with the button that approves it. **Workspaces** is the
-workflow half: every worktree with its objective and how far it has diverged,
+gate is waiting — with the button that approves it. **Workspaces** is the worktree
+half: every worktree with its objective and how far it has diverged,
 a diff for each, and create/remove.
 
 Restart Claude Code in the watched project so the hooks take effect.

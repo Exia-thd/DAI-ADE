@@ -2,7 +2,7 @@
   "name": "dai-ade",
   "version": "0.0.1",
   "private": true,
-  "description": "Agent Development Environment for the DAI Harness \u2014 the glass box around your own agents.",
+  "description": "Agent Development Environment: parallel agents in isolated worktrees, and the decision trail behind them.",
   "license": "MIT",
   "author": "Dat Tran Huu",
   "type": "commonjs",
@@ -15,10 +15,14 @@
     "doctor": "node packages/shell/src/cli.js doctor",
     "start": "electron .",
     "fixture": "node scripts/make-fixture.js",
-    "bridge": "node scripts/bridge-sync.js"
+    "bridge": "node scripts/bridge-sync.js",
+    "icon": "electron scripts/make-icon.js",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --win --dir"
   },
   "devDependencies": {
-    "electron": "^33.4.11"
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8"
   },
   "main": "packages/app/main.js",
   "bin": {
@@ -31,5 +35,52 @@
     "install.ps1",
     "README.md",
     "docs"
-  ]
+  ],
+  "productName": "DAI ADE",
+  "build": {
+    "appId": "dev.exia.dai-ade",
+    "productName": "DAI ADE",
+    "copyright": "Copyright (c) 2026 Dat Tran Huu",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "packages/**/*",
+      "bin/**/*",
+      "package.json",
+      "!packages/app/renderer/preview.html",
+      "!packages/app/renderer/preview-data.js",
+      "!**/*.map"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "DAI-ADE-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DAI ADE"
+    },
+    "portable": {
+      "artifactName": "DAI-ADE-${version}-portable.exe"
+    }
+  }
 }

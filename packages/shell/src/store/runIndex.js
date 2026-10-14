@@ -140,6 +140,109 @@ class RunIndex {
     }
   }
 
+  /**
+   * The agent map: one entry per actor that does work, with what it is doing.
+   *
+   * Built from spans rather than events because an actor's current activity is
+   * its most recent unfinished span — and when everything it started has
+   * finished, the last one it closed is still the honest answer to "what was it
+   * doing", which an event list cannot give you without re-deriving all of this.
+   *
+   * `idleMs` is measured against the newest event in the whole index, not the
+   * wall clock: a run replayed from disk hours later is not idle, it is over,
+   * and marking a finished run's agents as "stalled" would be a lie told
+   * confidently.
+   */
+  agents(runId = null) {
+    const runs = runId && runId !== '*' ? [runId] : [...this.runs.keys()];
+    const newest = Math.max(
+      0,
+      ...runs.map((id) => Date.parse(this.runs.get(id)?.endedAt ?? 0) || 0),
+    );
+
+    const out = [];
+    for (const id of runs) {
+      const run = this.runs.get(id);
+      if (!run) continue;
+
+      // Actors that do work: the session itself and anything it spawned. Tools
+      // are what an agent does, not an agent.
+      const actors = new Map();
+      for (const span of run.spans.values()) {
+        if (!span.actor || span.actor.kind === 'tool') continue;
+        // Phases and gates arrive from the harness as root actors. They are
+        // pipeline state, not agents: they do no work and have no activity.
+        if (/^(phase|gate):/.test(String(span.actor.id))) continue;
+        const key = `${span.actor.kind}:${span.actor.id}`;
+        if (!actors.has(key)) actors.set(key, { actor: span.actor, spans: [] });
+        actors.get(key).spans.push(span);
+      }
+
+      for (const [key, entry] of actors) {
+        const spans = entry.spans.sort((a, b) =>
+          String(a.openedAt ?? '').localeCompare(String(b.openedAt ?? '')));
+        const open = spans.filter((sp) => sp.status === 'open');
+        const events = spans.flatMap((sp) => sp.events);
+        if (!events.length) continue;
+        events.sort((a, b) => a.ts.localeCompare(b.ts));
+        const last = events[events.length - 1];
+
+        // What it is doing: the newest tool span whose parent is one of this
+        // actor's spans. Open first, then the most recent closed one.
+        // Sub-agents own none: PreToolUse does not say which sub-agent is
+        // running, so tool calls belong to the turn. `attributable` says so
+        // rather than reporting a zero that reads as "did nothing".
+        const owned = new Set(spans.map((sp) => sp.id));
+        const toolSpans = [...run.spans.values()]
+          .filter((sp) => sp.actor && sp.actor.kind === 'tool' && owned.has(sp.parent))
+          .sort((a, b) => String(a.openedAt ?? '').localeCompare(String(b.openedAt ?? '')));
+        const activeTool = toolSpans.filter((sp) => sp.status === 'open').pop();
+        const lastTool = activeTool || toolSpans[toolSpans.length - 1] || null;
+
+        const idleMs = newest ? newest - Date.parse(last.ts) : 0;
+        // There is no session-end hook, so a session's root span is open
+        // forever and "has an open span" can never mean "still working".
+        // Recency is the only honest signal, and `done` is never claimed
+        // because nothing in the stream says a session finished.
+        const status = idleMs < 120_000 ? 'working' : 'idle';
+        const hadFailure = spans.some((sp) => sp.status === 'failed')
+          || toolSpans.some((sp) => sp.status === 'failed');
+
+        out.push({
+          key: `${id}/${key}`,
+          runId: id,
+          kind: entry.actor.kind,
+          id: entry.actor.id,
+          tier: entry.actor.tier ?? null,
+          model: entry.actor.model ?? null,
+          status,
+          hadFailure,
+          attributable: entry.actor.kind !== 'worker',
+          startedAt: spans[0].openedAt ?? events[0].ts,
+          lastSeenAt: last.ts,
+          idleMs,
+          turns: spans.filter((sp) => sp.type === 'TURN_STARTED').length,
+          tools: toolSpans.length,
+          blocked: toolSpans.filter((sp) => sp.closedBy === 'TOOL_BLOCKED').length,
+          failedTools: toolSpans.filter((sp) => sp.closedBy === 'TOOL_FAILED').length,
+          doing: lastTool
+            ? {
+                tool: lastTool.actor.id,
+                live: Boolean(activeTool),
+                detail: describeTool(lastTool),
+                since: lastTool.openedAt,
+              }
+            : null,
+          prompt: lastPrompt(spans),
+        });
+      }
+    }
+
+    const rank = { working: 0, idle: 1 };
+    return out.sort((a, b) =>
+      (rank[a.status] - rank[b.status]) || String(b.lastSeenAt).localeCompare(String(a.lastSeenAt)));
+  }
+
   /** Spans as a tree, for the Roster and the Flow lanes. */
   tree(runId) {
     const run = this.runs.get(runId);
@@ -245,6 +348,33 @@ class RunIndex {
   list() {
     return [...this.runs.keys()].map((id) => this.summary(id)).sort((a, b) => String(b.startedAt).localeCompare(String(a.startedAt)));
   }
+}
+
+/** A one-line description of what a tool call is actually touching. */
+function describeTool(span) {
+  const payload = span.events.map((e) => e.payload).find((p) => p && p.input);
+  const input = payload && payload.input;
+  if (!input || typeof input !== 'object') return null;
+  if (input.truncated) return `${input.bytes} bytes`;
+  for (const field of ['command', 'file_path', 'file', 'path', 'pattern', 'query', 'url']) {
+    if (typeof input[field] === 'string') return input[field];
+  }
+  const first = Object.values(input).find((v) => typeof v === 'string');
+  return first ?? null;
+}
+
+/** The most recent prompt this actor was working on. */
+function lastPrompt(spans) {
+  let found = null;
+  for (const span of spans) {
+    for (const event of span.events) {
+      if (event.type === 'TURN_STARTED' && event.payload && event.payload.prompt) {
+        const prompt = event.payload.prompt;
+        found = typeof prompt === 'string' ? prompt : (prompt.preview ?? null);
+      }
+    }
+  }
+  return found;
 }
 
 module.exports = { RunIndex, SPAN_CLOSERS };
