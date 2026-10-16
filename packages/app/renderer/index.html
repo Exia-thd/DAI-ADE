@@ -18,6 +18,7 @@
     <button class="tab" data-view="agents" role="tab">Agents</button>
     <button class="tab" data-view="workspaces" role="tab">Workspaces</button>
     <button class="tab" data-view="mcp" role="tab">MCP</button>
+    <button class="tab" data-view="session" role="tab">Session</button>
   </div>
   <div class="spacer"></div>
   <select id="runSelect" class="select" aria-label="Run"></select>
@@ -112,6 +113,24 @@
   <section class="pane" id="mcpToolsPane">
     <h2>Tools <small id="mcpToolsHint">select a server</small></h2>
     <div id="mcpTools" class="mcp-tools"></div>
+  </section>
+</main>
+
+<main id="session" hidden>
+  <section class="pane" id="sessionLeft">
+    <h2>Environment <small id="envHint">where the work is happening</small></h2>
+    <div id="envBody" class="card-body"></div>
+
+    <h2>Carrying <small id="carryHint">measured by this window</small></h2>
+    <div id="carryBody" class="card-body"></div>
+  </section>
+
+  <section class="pane" id="sessionRight">
+    <h2>Connectors <small id="connHint">MCP servers in play</small></h2>
+    <div id="connBody" class="card-body"></div>
+
+    <h2>Outputs <small id="outHint">files the agents changed</small></h2>
+    <div id="outBody" class="card-body"></div>
   </section>
 </main>
 

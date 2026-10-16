@@ -24,6 +24,7 @@ const bridge = require('../shell/src/ingest/harnessBridge.js');
 const worktrees = require('../shell/src/git/worktrees.js');
 const mcp = require('../shell/src/mcp/client.js');
 const mcpRegistry = require('../shell/src/mcp/registry.js');
+const inventory = require('../shell/src/session/inventory.js');
 const { AgentSession, isResumable, resolveCli } = require('../shell/src/agent/session.js');
 const runnerRegistry = require('../shell/src/agent/runners.js');
 const slashCommands = require('../shell/src/agent/commands.js');
@@ -238,6 +239,18 @@ function snapshot() {
     features,
     activeFeature,
     mcp: mcpServers(),
+    environment: environment(),
+    session: {
+      // Measured by this window, from files and from what the servers
+      // answered. Never the agent's own accounting, which is not visible
+      // from out here.
+      parts: sessionParts(),
+      reported: inventory.reported(
+        (combined ? index.agents('*') : index.agents(runId)).filter((a) => runIds.has(a.runId)),
+      ),
+      bytesPerToken: inventory.BYTES_PER_TOKEN,
+    },
+    outputs: inventory.outputs(allEvents),
     chat: (() => {
       const key = activeFeature ?? MAIN_FEATURE;
       const chat = chatFor(key);
@@ -286,7 +299,12 @@ function listWorkspaces(force = false) {
       catch (err) { return { ...entry, statusError: err.message }; }
     });
   } catch { value = []; }
-  workspaceCache = { at: now, value };
+  // Stamped when the work finished, not when it started. Listing four
+  // worktrees costs about nine seconds on this machine; stamping the start
+  // meant the entry was already older than its own two-second lifetime by the
+  // time it was stored, so every snapshot re-ran git and the main process
+  // never got a turn - the window stopped finishing its load at all.
+  workspaceCache = { at: Date.now(), value };
   return value;
 }
 
@@ -297,10 +315,14 @@ function send(channel, payload) {
 // Coalesce pushes. A burst of hook events during a parallel turn can arrive as
 // dozens of appends in one poll; repainting per event would spend the whole
 // frame budget on work the next event invalidates.
+let tick = 0;
 setInterval(() => {
   if (!dirty) return;
   dirty = false;
+  if (SHOT_DIR && tick < 4) console.log('snapshot tick', ++tick, 'start');
+  const began = Date.now();
   send('ade:snapshot', snapshot());
+  if (SHOT_DIR && tick <= 4) console.log('  snapshot took', Date.now() - began, 'ms');
 }, 250);
 
 /* -------------------------------------------------------------- window --- */
@@ -393,7 +415,7 @@ async function captureTabs() {
   console.log(`content size: ${actual[0]}x${actual[1]}`);
   await wait(2500);
 
-  for (const tab of ['observe', 'agents', 'workspaces', 'mcp']) {
+  for (const tab of ['observe', 'agents', 'workspaces', 'mcp', 'session']) {
     await win.webContents.executeJavaScript(
       `document.querySelector('.tab[data-view="${tab}"]').click(); true;`,
     );
@@ -523,6 +545,51 @@ function pushChat(chat, message) {
   chat.messages.push({ ...message, at: new Date().toISOString() });
   if (chat.messages.length > MAX_CHAT_MESSAGES) chat.messages.splice(0, chat.messages.length - MAX_CHAT_MESSAGES);
   dirty = true;
+}
+
+/**
+ * Where the work is happening.
+ *
+ * Measuring the tree is cheap but not free, and the panel does not need it
+ * four times a second, so it is cached like the worktree listing is.
+ */
+let inventoryCache = { at: 0, value: [] };
+
+function sessionParts() {
+  if (!project) return [];
+  const now = Date.now();
+  if (now - inventoryCache.at < 10_000) return inventoryCache.value;
+  let value = [];
+  try { value = inventory.measure(project, { mcpServers: mcpServers() }); }
+  catch { value = []; }
+  inventoryCache = { at: now, value };
+  return value;
+}
+
+/** The checkouts in play, each with the branch it is on. */
+function environment() {
+  if (!project) return null;
+  let checkouts = [];
+  try {
+    // listWorkspaces, not worktrees.list: the uncached call shells out to git,
+    // and this runs on every snapshot. Four git processes a second starved the
+    // main process badly enough that the window never finished loading.
+    checkouts = listWorkspaces().map((entry) => ({
+      path: entry.path,
+      branch: entry.branch ? entry.branch.replace(/^refs\/heads\//, '') : null,
+      taskId: entry.taskId || null,
+      managed: Boolean(entry.managed),
+      main: !entry.managed,
+    }));
+  } catch { checkouts = []; }
+  return {
+    project,
+    eventsDir: eventsDir(project),
+    checkouts,
+    // Said plainly: this window watches each of these for events, and a
+    // session running in one writes its stream there.
+    watching: tailer ? [...tailer.tailers.keys()] : [],
+  };
 }
 
 /* --- MCP: what exists, what works, and what an agent may reach ------------ */

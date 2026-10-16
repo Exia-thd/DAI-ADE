@@ -210,11 +210,11 @@ const SESSIONS = [
     id: 'sess-retry-budget', feature: 'retry-budget', model: 'claude-opus-5',
     prompt: 'Cap declined-card retries at two and prove it',
     turns: [
-      { tools: [['Read', { file: 'docs/billing.md' }], ['Grep', { pattern: 'shouldRetry' }]],
+      { tools: [['Read', { file_path: 'docs/billing.md' }], ['Grep', { pattern: 'shouldRetry' }]],
         agents: [{ id: 'explore-billing', type: 'Explore' }] },
-      { tools: [['Edit', { file: 'src/billing/retry.ts' }], ['Bash', { command: 'npm test -- retry' }]],
+      { tools: [['Edit', { file_path: 'src/billing/retry.ts' }], ['Bash', { command: 'npm test -- retry' }]],
         agents: [] },
-      { tools: [['Bash', { command: 'npm run lint' }, { failed: true }], ['Edit', { file: 'src/billing/retry.ts' }]],
+      { tools: [['Bash', { command: 'npm run lint' }, { failed: true }], ['Edit', { file_path: 'src/billing/retry.ts' }]],
         agents: [] },
     ],
   },
@@ -222,9 +222,9 @@ const SESSIONS = [
     id: 'sess-idempotency', ended: true, feature: 'idempotent-charge', model: 'claude-opus-5',
     prompt: 'Make charge idempotent with a request key',
     turns: [
-      { tools: [['Read', { file: 'src/billing/charge.ts' }]],
+      { tools: [['Read', { file_path: 'src/billing/charge.ts' }]],
         agents: [{ id: 'plan-idempotency', type: 'Plan' }, { id: 'explore-gateway', type: 'Explore' }] },
-      { tools: [['Edit', { file: 'src/billing/charge.ts' }], ['Bash', { command: 'npm test -- charge' }]],
+      { tools: [['Edit', { file_path: 'src/billing/charge.ts' }], ['Bash', { command: 'npm test -- charge' }]],
         agents: [] },
     ],
   },
@@ -232,7 +232,7 @@ const SESSIONS = [
     id: 'sess-session-rotation', feature: 'session-rotation', model: 'claude-sonnet-5-5',
     prompt: 'Rotate session tokens every 15 minutes',
     turns: [
-      { tools: [['Read', { file: 'src/auth/session.ts' }], ['Edit', { file: 'src/auth/session.ts' }]],
+      { tools: [['Read', { file_path: 'src/auth/session.ts' }], ['Edit', { file_path: 'src/auth/session.ts' }]],
         agents: [{ id: 'review-auth', type: 'code-review' }] },
     ],
   },
@@ -240,9 +240,9 @@ const SESSIONS = [
     id: 'sess-search-ranking', feature: 'search-ranking', model: 'claude-opus-5',
     prompt: 'Fuse keyword and semantic ranking',
     turns: [
-      { tools: [['Grep', { pattern: 'bm25' }], ['Read', { file: 'src/search/index.ts' }]],
+      { tools: [['Grep', { pattern: 'bm25' }], ['Read', { file_path: 'src/search/index.ts' }]],
         agents: [{ id: 'explore-search', type: 'Explore' }, { id: 'general-bench', type: 'general-purpose' }] },
-      { tools: [['Edit', { file: 'src/search/index.ts' }], ['Bash', { command: 'npm run bench' }]],
+      { tools: [['Edit', { file_path: 'src/search/index.ts' }], ['Bash', { command: 'npm run bench' }]],
         agents: [],
         // Left mid-turn on purpose: the bridge attaches harness events to the
         // session that is open, which is where a waiting gate belongs.
@@ -256,7 +256,7 @@ const SESSIONS = [
     id: 'sess-release-notes', ended: true, feature: null, model: 'claude-sonnet-5-5',
     prompt: 'Write the release notes for the billing hardening set',
     turns: [
-      { tools: [['Read', { file: 'docs/billing.md' }], ['Bash', { command: 'git log --oneline -20' }]],
+      { tools: [['Read', { file_path: 'docs/billing.md' }], ['Bash', { command: 'git log --oneline -20' }]],
         agents: [] },
     ],
   },

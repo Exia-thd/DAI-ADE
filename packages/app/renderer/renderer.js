@@ -369,6 +369,7 @@ function render(next) {
   if (view === 'workspaces') renderWorkspaces();
   if (view === 'agents') { renderAgentsView(); renderAgentDetail(); }
   if (view === 'mcp') { renderMcp(); renderMcpTools(); }
+  if (view === 'session') renderSession();
   renderCounters();
   renderFlow();
   renderRoster();
@@ -407,11 +408,13 @@ function setView(next) {
   $('agents').hidden = next !== 'agents';
   $('workspaces').hidden = next !== 'workspaces';
   $('mcp').hidden = next !== 'mcp';
+  $('session').hidden = next !== 'session';
   $('counters').hidden = next !== 'observe';
   renderGate();
   if (next === 'workspaces') renderWorkspaces();
   if (next === 'agents') { renderAgentsView(); renderAgentDetail(); }
   if (next === 'mcp') { renderMcp(); renderMcpTools(); }
+  if (next === 'session') renderSession();
 }
 
 document.querySelectorAll('.tab').forEach((t) =>
@@ -1584,3 +1587,259 @@ $('mcpAdd').addEventListener('click', async () => {
   $('mcpCommand').value = '';
   render(await window.ade.getSnapshot());
 });
+
+/* ================================================================ session = */
+
+/**
+ * What this session is carrying, and where every number came from.
+ *
+ * The agent's own context accounting is not visible from out here - a hook
+ * carries no breakdown and a transcript records totals, not what the tokens
+ * were spent on. So this panel does not reproduce that breakdown. It shows the
+ * parts this window measured itself, each labelled with what was read, and the
+ * one authoritative figure there is: the context size the session reported in
+ * its own transcript.
+ *
+ * It deliberately does not draw a full bar. A bar that fills the width implies
+ * it accounts for everything, and the moment one slice is a guess the whole
+ * picture is a lie.
+ */
+
+const PART_COLOURS = {
+  skills: '#1263d2',
+  commands: '#0f766e',
+  memory: '#b45309',
+  'claude-md': '#7c3aed',
+  'mcp-tools': '#be185d',
+};
+
+const bytes = (n) => {
+  if (n == null) return '—';
+  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)} MB`;
+  if (n >= 1024) return `${Math.round(n / 1024)} KB`;
+  return `${n} B`;
+};
+
+function row(parent, key, value, dim) {
+  const line = document.createElement('div');
+  line.className = 'kvrow';
+  const k = document.createElement('div');
+  k.className = 'k';
+  k.textContent = key;
+  const v = document.createElement('div');
+  v.className = dim ? 'v dim' : 'v';
+  v.textContent = value;
+  v.title = value;
+  line.append(k, v);
+  parent.append(line);
+  return line;
+}
+
+function renderSession() {
+  renderEnvironment();
+  renderCarrying();
+  renderConnectors();
+  renderOutputs();
+}
+
+function renderEnvironment() {
+  const host = $('envBody');
+  const env = snap && snap.environment;
+  host.textContent = '';
+  if (!env) {
+    $('envHint').textContent = 'no project open';
+    host.append(Object.assign(document.createElement('p'), { className: 'dim', textContent: 'open a project first' }));
+    return;
+  }
+
+  const managed = env.checkouts.filter((c) => c.managed).length;
+  $('envHint').textContent = `${env.checkouts.length} checkout${env.checkouts.length === 1 ? '' : 's'}`
+    + (managed ? ` · ${managed} feature` : '');
+
+  for (const checkout of env.checkouts) {
+    const line = document.createElement('div');
+    line.className = 'checkout';
+    const name = document.createElement('span');
+    name.className = 'nm';
+    name.textContent = checkout.taskId || 'main';
+    line.append(name);
+    if (checkout.branch) {
+      const branch = document.createElement('span');
+      branch.className = 'br';
+      branch.textContent = checkout.branch;
+      line.append(branch);
+    }
+    const where = document.createElement('span');
+    where.className = 'pt';
+    where.textContent = checkout.path;
+    where.title = checkout.path;
+    line.append(where);
+    host.append(line);
+  }
+
+  // Which directories are actually being followed. A session running in a
+  // worktree writes its events there, so this is the difference between
+  // seeing that work and not seeing it.
+  row(host, 'watching', `${env.watching.length} event director${env.watching.length === 1 ? 'y' : 'ies'}`, true)
+    .title = env.watching.join('\n');
+}
+
+function renderCarrying() {
+  const host = $('carryBody');
+  const session = (snap && snap.session) || { parts: [], reported: null };
+  host.textContent = '';
+
+  const parts = session.parts || [];
+  const measured = parts.reduce((n, part) => n + part.tokens, 0);
+
+  $('carryHint').textContent = parts.length
+    ? `${parts.length} measured part${parts.length === 1 ? '' : 's'}`
+    : 'nothing measurable found';
+
+  if (session.reported) {
+    const reported = session.reported;
+    row(host, 'context', `${fmtTokens(reported.largest.contextTokens)} tokens`
+      + (reported.largest.model ? ` · ${reported.largest.model}` : ''));
+    row(host, 'reported by', reported.source, true);
+    if (reported.measured < reported.sessions) {
+      row(host, '', `${reported.sessions - reported.measured} session(s) reported no usage`, true);
+    }
+  } else {
+    row(host, 'context', 'no session reported its usage', true);
+  }
+
+  if (parts.length) {
+    // Drawn against the reported context when the session gave one, so the
+    // measured parts occupy their real share and the rest of the bar is
+    // visibly unaccounted for. Filling the width would claim completeness
+    // that this panel explicitly does not have.
+    const whole = session.reported ? session.reported.largest.contextTokens : measured;
+    const bar = document.createElement('div');
+    bar.className = 'measure-bar';
+    for (const part of parts) {
+      const slice = document.createElement('i');
+      slice.style.width = `${Math.max(0.4, (part.tokens / whole) * 100)}%`;
+      slice.style.background = PART_COLOURS[part.id] || 'var(--faint)';
+      slice.title = `${part.label}: ${fmtTokens(part.tokens)} estimated tokens`;
+      bar.append(slice);
+    }
+    host.append(bar);
+
+    if (session.reported) {
+      // A share that rounds to zero reads as a bug rather than as a small
+      // number, so anything under one percent says so instead.
+      const exact = (measured / whole) * 100;
+      const share = exact < 1 ? 'under 1%' : `about ${Math.round(exact)}%`;
+      row(host, 'measured', `~${fmtTokens(measured)} of ${fmtTokens(whole)} reported`
+        + ` — ${share}, the rest is not visible from here`, true);
+    }
+
+    for (const part of parts) {
+      const line = document.createElement('div');
+      line.className = 'part';
+      const swatch = document.createElement('span');
+      swatch.className = 'sw';
+      swatch.style.background = PART_COLOURS[part.id] || 'var(--faint)';
+      const name = document.createElement('span');
+      name.className = 'nm';
+      name.textContent = part.label;
+      const count = document.createElement('span');
+      count.className = 'ct';
+      count.textContent = `~${fmtTokens(part.tokens)}`;
+      const size = document.createElement('span');
+      size.className = 'sz';
+      size.textContent = `${part.files} ${part.unit || 'file'}${part.files === 1 ? '' : 's'}`;
+      line.append(swatch, name, count, size);
+      host.append(line);
+
+      const source = document.createElement('div');
+      source.className = 'part-src';
+      source.textContent = `${bytes(part.bytes)} · ${part.source}`;
+      source.title = part.source;
+      host.append(source);
+    }
+  }
+
+  // The honest part, said on the page rather than only in a commit message.
+  const caveat = document.createElement('div');
+  caveat.className = 'caveat';
+  caveat.textContent = parts.length
+    ? `Token figures are bytes ÷ ${session.bytesPerToken}, an estimate. These are the parts `
+      + 'this window can measure; they are not a breakdown of the agent\'s context, '
+      + 'which no hook or transcript exposes, and they are not meant to add up to it.'
+    : 'Nothing on disk to measure here. The agent\'s own context breakdown is not '
+      + 'visible from outside it.';
+  host.append(caveat);
+}
+
+function renderConnectors() {
+  const host = $('connBody');
+  const servers = (snap && snap.mcp) || [];
+  host.textContent = '';
+
+  const answered = servers.filter((s) => s.check && s.check.ok === true).length;
+  $('connHint').textContent = servers.length
+    ? `${servers.length} declared · ${answered} answered`
+    : 'none declared';
+
+  if (!servers.length) {
+    host.append(Object.assign(document.createElement('p'), {
+      className: 'dim', textContent: 'no MCP servers declared for this project',
+    }));
+    return;
+  }
+
+  for (const server of servers) {
+    const line = document.createElement('div');
+    line.className = 'checkout';
+    const dot = document.createElement('span');
+    dot.className = 'mcp-dot';
+    if (server.check) dot.style.background = server.check.ok === true
+      ? 'var(--green)' : (server.check.ok === false ? 'var(--red)' : 'var(--faint)');
+    const name = document.createElement('span');
+    name.className = 'nm';
+    name.textContent = server.name;
+    const state = document.createElement('span');
+    state.className = 'pt';
+    // Never "authenticated": this window cannot see a connector's OAuth state.
+    state.textContent = server.check
+      ? (server.check.ok === true
+          ? `${server.check.tools.length} tools`
+          : (server.check.ok === false ? 'did not answer' : 'not checked from here'))
+      : 'not checked yet';
+    line.append(dot, name, state);
+    host.append(line);
+  }
+}
+
+function renderOutputs() {
+  const host = $('outBody');
+  const files = (snap && snap.outputs) || [];
+  host.textContent = '';
+
+  $('outHint').textContent = files.length
+    ? `${files.length} file${files.length === 1 ? '' : 's'} changed`
+    : 'nothing written yet';
+
+  if (!files.length) {
+    host.append(Object.assign(document.createElement('p'), {
+      className: 'dim', textContent: 'no file-writing tool call has been seen in this view',
+    }));
+    return;
+  }
+
+  for (const entry of files) {
+    const line = document.createElement('div');
+    line.className = `outrow${entry.failed ? ' bad' : ''}`;
+    const name = document.createElement('span');
+    name.className = 'f';
+    name.textContent = entry.file;
+    name.title = `${entry.tool} · ${entry.writes} write(s)`
+      + (entry.failed ? ` · ${entry.failed} failed` : '');
+    const when = document.createElement('span');
+    when.className = 't';
+    when.textContent = String(entry.at).slice(11, 19);
+    line.append(name, when);
+    host.append(line);
+  }
+}

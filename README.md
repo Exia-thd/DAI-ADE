@@ -90,6 +90,27 @@ nobody reported a cost for shows none rather than a zero.
 inspector, the raw stream, and a bar across the top when a gate is waiting —
 with the button that approves it.
 
+**Session** is the inventory: which checkouts are in play and what branch each
+is on, which event directories the window is following, what the session is
+carrying, which MCP servers answered, and the files the agents actually
+changed.
+
+The carrying figures deserve a sentence, because this is where a dashboard is
+most easily believed without being checked. The agent's own context breakdown
+is not visible from outside it — a hook carries no breakdown and a transcript
+records totals, not what the tokens were spent on. So this panel does not
+reproduce one. It shows the parts the window measured itself, each labelled
+with exactly what was read (`.claude/skills/**/*.md`, `tools/list` from the
+servers that answered, and so on), alongside the one authoritative number
+there is: the context size the session reported in its own transcript. Token
+counts from files are bytes ÷ 4 and say so.
+
+The bar is drawn against the reported context, not stretched to fill the
+width, so the measured parts occupy their real share and the unaccounted
+remainder is visible rather than merely described. A bar that fills the width
+claims completeness, and the moment one slice is a guess the whole picture is
+a lie.
+
 **Workspaces** is the worktree half: every worktree with its objective and how
 far it has diverged, a diff for each, and create/remove.
 
